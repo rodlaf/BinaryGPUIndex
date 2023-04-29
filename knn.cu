@@ -44,17 +44,19 @@ __host__ void printBits(uint64_cu *x) {
 }
 
 int main(void) {
-  int numIndexes = 1 << 30;
+  int numIndexes = 100;
 
   thrust::default_random_engine rng(1234);
   thrust::uniform_int_distribution<uint64_cu> dist(0, UINT64_MAX);
 
   uint64_cu *query, *indexes;
   float *distances;
+  int *keys;
 
   cudaMallocManaged(&query, sizeof(uint64_cu));
   cudaMallocManaged(&indexes, numIndexes * sizeof(uint64_cu));
   cudaMallocManaged(&distances, numIndexes * sizeof(float));
+  cudaMallocManaged(&keys, numIndexes * sizeof(int));
 
   thrust::generate(indexes, indexes + numIndexes, [&] { return dist(rng); });
 
@@ -79,8 +81,10 @@ int main(void) {
 
   computeDistances<<<numBlocks, blockSize>>>(numIndexes, query, indexes,
                                              distances);
+  
+  thrust::sequence(thrust::device, keys, keys + numIndexes);
 
-  thrust::sort(thrust::device, distances, distances + numIndexes);
+  thrust::sort_by_key(thrust::device, distances, distances + numIndexes, keys);
 
   cudaDeviceSynchronize();
 
@@ -90,6 +94,9 @@ int main(void) {
 
 
   printf("Execution time:  %.3f ms \n", time);
+
+  for (int i = 0; i < numIndexes; ++i)
+    printf("%d\n", keys[i]);
 
   cudaFree(query);
   cudaFree(indexes);
