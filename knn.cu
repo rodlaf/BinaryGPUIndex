@@ -122,16 +122,15 @@ int main(void) {
 
   cudaMemcpy(kNearestKeys, keys, k * sizeof(int), cudaMemcpyDeviceToHost);
   cudaMemcpy(kNearestDistances, distances, k * sizeof(float), cudaMemcpyDeviceToHost);
-
-  // for (int i = 0; i < k; ++i) {
-  //   int idx = kNearestKeys[i];
-  //   cudaMemcpy(&kNearestIndexes[idx], &indexes[idx], sizeof(uint64_cu),
-  //              cudaMemcpyDeviceToHost);
-  // }
+  for (int i = 0; i < k; ++i) {
+    int idx = kNearestKeys[i];
+    cudaMemcpy(&kNearestIndexes[i], &indexes[idx], sizeof(uint64_cu),
+               cudaMemcpyDeviceToHost);
+  }
 
   for (int i = 0; i < k; ++i) {
     printf("%d: %8d  %8.8f\n", i, kNearestKeys[i], kNearestDistances[i]);
-    // printBits(&kNearestIndexes[i]);
+    printBits(&kNearestIndexes[i]);
   }
 
   cudaFree(query);
