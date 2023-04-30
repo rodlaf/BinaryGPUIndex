@@ -22,21 +22,13 @@ __device__ void cosineDistance(uint64_cu *a, uint64_cu *b, float *dest) {
   *dest = 1 - (a_dot_b / (sqrt(a_dot_a) * sqrt(b_dot_b)));
 }
 
-// gives same results as cosine distance
-__device__ void jaccardDistance(uint64_cu *a, uint64_cu *b, float *dest) {
-  float intersectionBits = (float)__popcll(*a & *b);
-  float unionBits = (float)__popcll(*a | *b);
-
-  *dest = 1 - (intersectionBits / unionBits);
-}
-
 __global__ void computeDistances(int numIndexes, uint64_cu *query,
                                  uint64_cu *indexes, float *distances) {
   int idx = blockIdx.x * blockDim.x + threadIdx.x;
   int stride = blockDim.x * gridDim.x;
 
   for (int i = idx; i < numIndexes; i += stride)
-    jaccardDistance(query, &indexes[i], &distances[i]);
+    cosineDistance(query, &indexes[i], &distances[i]);
 }
 
 __host__ void printBits(uint64_cu *x) {
@@ -45,8 +37,11 @@ __host__ void printBits(uint64_cu *x) {
 }
 
 int main(void) {
-  int numIndexes = 900000000;
+  int numIndexes = 970000000; // rough maximum on 24gb of GPU memory
   int k = 100;
+
+  int blockSize = 256;
+  int numBlocks = (numIndexes + blockSize - 1) / blockSize;
 
   // host memory
   uint64_cu *hostQuery;
@@ -76,31 +71,43 @@ int main(void) {
                    [&] { return uniDist(rng); });
   cudaMemcpy(indexes, hostIndexes, numIndexes * sizeof(uint64_cu),
              cudaMemcpyHostToDevice);
-  free(hostIndexes);
 
   // generate query on host and transfer to device
   *hostQuery = uniDist(rng);
   cudaMemcpy(query, hostQuery, sizeof(uint64_cu), cudaMemcpyHostToDevice);
-  // free(hostQuery);
 
   float time;
   cudaEvent_t start, stop;
-
-  cudaDeviceSynchronize();
 
   cudaEventCreate(&start);
   cudaEventCreate(&stop);
   cudaEventRecord(start, 0);
 
-  int blockSize = 256;
-  int numBlocks = (numIndexes + blockSize - 1) / blockSize;
+  // compute and retrieve k nearest neighbors of a query index
+  {
+    // ~23ms on ~1B indexes
+    computeDistances<<<numBlocks, blockSize>>>(numIndexes, query, indexes,
+                                               distances);
 
-  computeDistances<<<numBlocks, blockSize>>>(numIndexes, query, indexes,
-                                             distances);
+    // generate sequence (0, 1, ..., numIndexes - 1) as keys
+    thrust::sequence(thrust::device, keys, keys + numIndexes);
 
-  thrust::sequence(thrust::device, keys, keys + numIndexes);
+    // problem: needs a ton of space, contributes most to duration; no easy
+    // parallelizable way to get k smallest values in an unsorted list of floats
+    // ~353ms on ~1B indexes
+    thrust::sort_by_key(thrust::device, distances, distances + numIndexes,
+                        keys);
 
-  thrust::sort_by_key(thrust::device, distances, distances + numIndexes, keys);
+    // copy k nearest keys, distances, and indexes from device to host
+    cudaMemcpy(kNearestKeys, keys, k * sizeof(int), cudaMemcpyDeviceToHost);
+    cudaMemcpy(kNearestDistances, distances, k * sizeof(float),
+               cudaMemcpyDeviceToHost);
+    for (int i = 0; i < k; ++i) {
+      int idx = kNearestKeys[i];
+      cudaMemcpy(&kNearestIndexes[i], &indexes[idx], sizeof(uint64_cu),
+                 cudaMemcpyDeviceToHost);
+    }
+  }
 
   cudaEventRecord(stop, 0);
   cudaEventSynchronize(stop);
@@ -108,25 +115,26 @@ int main(void) {
 
   printf("Execution time:  %.3f ms \n", time);
 
-  cudaMemcpy(kNearestKeys, keys, k * sizeof(int), cudaMemcpyDeviceToHost);
-  cudaMemcpy(kNearestDistances, distances, k * sizeof(float),
-             cudaMemcpyDeviceToHost);
-  for (int i = 0; i < k; ++i) {
-    int idx = kNearestKeys[i];
-    cudaMemcpy(&kNearestIndexes[i], &indexes[idx], sizeof(uint64_cu),
-               cudaMemcpyDeviceToHost);
-  }
-
+  // print results
   printf("Query: ");
   printBits(hostQuery);
   for (int i = 0; i < k; ++i) {
-    printf("%4d: %8.8f ", i + 1, kNearestDistances[i]);
+    printf("%5d: %8.8f ", i + 1, kNearestDistances[i]);
     printBits(&kNearestIndexes[i]);
   }
 
+  // free device memory
   cudaFree(query);
   cudaFree(indexes);
   cudaFree(distances);
+  cudaFree(keys);
+
+  // free host memory
+  free(hostQuery);
+  free(hostIndexes);
+  free(kNearestKeys);
+  free(kNearestDistances);
+  free(kNearestIndexes);
 
   return 0;
 }
