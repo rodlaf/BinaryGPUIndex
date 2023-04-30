@@ -12,21 +12,22 @@
 
 typedef unsigned long long int uint64_cu;
 
-__device__ void cosineSimilarity(uint64_cu *a, uint64_cu *b, float *dest) {
+__device__ void cosineDistance(uint64_cu *a, uint64_cu *b, float *dest) {
   // __popcll computes the Hamming Weight of an integer (e.g., number of bits
   // that are 1)
   float a_dot_b = (float)__popcll(*a & *b);
   float a_dot_a = (float)__popcll(*a);
   float b_dot_b = (float)__popcll(*b);
 
-  *dest = a_dot_b / (sqrt(a_dot_a) * sqrt(b_dot_b));
+  *dest = 1 - (a_dot_b / (sqrt(a_dot_a) * sqrt(b_dot_b)));
 }
 
-__device__ void jaccardSimilarity(uint64_cu *a, uint64_cu *b, float *dest) {
+// gives same results as cosine distance
+__device__ void jaccardDistance(uint64_cu *a, uint64_cu *b, float *dest) {
   float intersectionBits = (float)__popcll(*a & *b);
   float unionBits = (float)__popcll(*a | *b);
 
-  *dest = intersectionBits / unionBits;
+  *dest = 1 - (intersectionBits / unionBits);
 }
 
 __global__ void computeDistances(int numIndexes, uint64_cu *query,
@@ -35,7 +36,7 @@ __global__ void computeDistances(int numIndexes, uint64_cu *query,
   int stride = blockDim.x * gridDim.x;
 
   for (int i = idx; i < numIndexes; i += stride)
-    cosineSimilarity(query, &indexes[i], &distances[i]);
+    jaccardDistance(query, &indexes[i], &distances[i]);
 }
 
 __host__ void printBits(uint64_cu *x) {
@@ -43,22 +44,9 @@ __host__ void printBits(uint64_cu *x) {
   std::cout << b << std::endl;
 }
 
-__host__ void sortByDistance(int numIndexes, int k, uint64_cu *query,
-                             uint64_cu *indexes, float *distances, int *keys) {
-  int blockSize = 256;
-  int numBlocks = (numIndexes + blockSize - 1) / blockSize;
-
-  computeDistances<<<numBlocks, blockSize>>>(numIndexes, query, indexes,
-                                             distances);
-
-  thrust::sequence(thrust::device, keys, keys + numIndexes);
-
-  thrust::sort_by_key(thrust::device, distances, distances + numIndexes, keys);
-}
-
 int main(void) {
-  int numIndexes = 256;
-  int k = 10;
+  int numIndexes = 900000000;
+  int k = 100;
 
   // host memory
   uint64_cu *hostQuery;
@@ -121,15 +109,18 @@ int main(void) {
   printf("Execution time:  %.3f ms \n", time);
 
   cudaMemcpy(kNearestKeys, keys, k * sizeof(int), cudaMemcpyDeviceToHost);
-  cudaMemcpy(kNearestDistances, distances, k * sizeof(float), cudaMemcpyDeviceToHost);
+  cudaMemcpy(kNearestDistances, distances, k * sizeof(float),
+             cudaMemcpyDeviceToHost);
   for (int i = 0; i < k; ++i) {
     int idx = kNearestKeys[i];
     cudaMemcpy(&kNearestIndexes[i], &indexes[idx], sizeof(uint64_cu),
                cudaMemcpyDeviceToHost);
   }
 
+  printf("Query: ");
+  printBits(hostQuery);
   for (int i = 0; i < k; ++i) {
-    printf("%d: %8d  %8.8f\n", i, kNearestKeys[i], kNearestDistances[i]);
+    printf("%4d: %8.8f ", i + 1, kNearestDistances[i]);
     printBits(&kNearestIndexes[i]);
   }
 
