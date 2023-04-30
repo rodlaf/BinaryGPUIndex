@@ -87,6 +87,7 @@ int main(void) {
                                              distances);
   thrust::sequence(thrust::device, keys, keys + numIndexes);
   thrust::sort_by_key(thrust::device, distances, distances + numIndexes, keys);
+  cudaMemcpy(kNearestKeys, keys, k * sizeof(int), cudaMemcpyDeviceToHost);
 
 
   cudaEventRecord(stop, 0);
@@ -94,14 +95,10 @@ int main(void) {
   cudaEventElapsedTime(&time, start, stop);
 
 
-  cudaDeviceSynchronize();
+  // cudaDeviceSynchronize();
 
-  cudaMemcpy(kNearestKeys, keys, k * sizeof(int), cudaMemcpyDeviceToHost);
 
   printf("Execution time:  %.3f ms \n", time);
-
-  // for (int i = 0; i < numIndexes; ++i)
-  //   printf("%d\n", keys[i]);
 
   for (int i = 0; i < k; ++i)
     printf("%d\n", kNearestKeys[i]);
