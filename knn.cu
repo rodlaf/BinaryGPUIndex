@@ -1,7 +1,7 @@
+#include <bitset>
 #include <iostream>
 #include <math.h>
 #include <sys/time.h>
-#include <bitset>
 
 #include <thrust/device_vector.h>
 #include <thrust/functional.h>
@@ -30,7 +30,7 @@ __device__ void jaccardSimilarity(uint64_cu *a, uint64_cu *b, float *dest) {
 }
 
 __global__ void computeDistances(int numIndexes, uint64_cu *query,
-                                  uint64_cu *indexes, float *distances) {
+                                 uint64_cu *indexes, float *distances) {
   int idx = blockIdx.x * blockDim.x + threadIdx.x;
   int stride = blockDim.x * gridDim.x;
 
@@ -43,65 +43,96 @@ __host__ void printBits(uint64_cu *x) {
   std::cout << b << std::endl;
 }
 
+__host__ void sortByDistance(int numIndexes, int k, uint64_cu *query,
+                             uint64_cu *indexes, float *distances, int *keys) {
+  int blockSize = 256;
+  int numBlocks = (numIndexes + blockSize - 1) / blockSize;
+
+  computeDistances<<<numBlocks, blockSize>>>(numIndexes, query, indexes,
+                                             distances);
+
+  thrust::sequence(thrust::device, keys, keys + numIndexes);
+
+  thrust::sort_by_key(thrust::device, distances, distances + numIndexes, keys);
+}
+
 int main(void) {
-  int numIndexes = 100;
+  int numIndexes = 256;
   int k = 10;
 
-  thrust::default_random_engine rng(1234);
-  thrust::uniform_int_distribution<uint64_cu> dist(0, UINT64_MAX);
+  // host memory
+  uint64_cu *hostQuery;
+  uint64_cu *hostIndexes;
+  int *kNearestKeys;
+  float *kNearestDistances;
+  uint64_cu *kNearestIndexes;
+  hostQuery = (uint64_cu *)malloc(sizeof(uint64_cu));
+  hostIndexes = (uint64_cu *)malloc(numIndexes * sizeof(uint64_cu));
+  kNearestKeys = (int *)malloc(k * sizeof(int));
+  kNearestDistances = (float *)malloc(k * sizeof(float));
+  kNearestIndexes = (uint64_cu *)malloc(k * sizeof(uint64_cu));
 
+  // device memory
   uint64_cu *query, *indexes;
   float *distances;
   int *keys;
-
-  cudaMallocManaged(&query, sizeof(uint64_cu));
-  cudaMallocManaged(&indexes, numIndexes * sizeof(uint64_cu));
-  cudaMallocManaged(&distances, numIndexes * sizeof(float));
+  cudaMalloc(&query, sizeof(uint64_cu));
+  cudaMalloc(&indexes, numIndexes * sizeof(uint64_cu));
+  cudaMalloc(&distances, numIndexes * sizeof(float));
   cudaMalloc(&keys, numIndexes * sizeof(int));
 
+  // generate indexes on host and transfer to device
+  thrust::default_random_engine rng(1234);
+  thrust::uniform_int_distribution<uint64_cu> uniDist(0, UINT64_MAX);
+  thrust::generate(hostIndexes, hostIndexes + numIndexes,
+                   [&] { return uniDist(rng); });
+  cudaMemcpy(indexes, hostIndexes, numIndexes * sizeof(uint64_cu),
+             cudaMemcpyHostToDevice);
+  free(hostIndexes);
 
-  int *kNearestKeys;
-  kNearestKeys = (int *)malloc(k * sizeof(int));
-
-  // cudaHostAlloc(&kNearestKeys, (size_t)k * sizeof(int));
-
-  thrust::generate(indexes, indexes + numIndexes, [&] { return dist(rng); });
-
-  *query = dist(rng);
-
-  int blockSize = 256;
-  int numBlocks = (numIndexes + blockSize - 1) / blockSize;
+  // generate query on host and transfer to device
+  *hostQuery = uniDist(rng);
+  cudaMemcpy(query, hostQuery, sizeof(uint64_cu), cudaMemcpyHostToDevice);
+  // free(hostQuery);
 
   float time;
   cudaEvent_t start, stop;
 
-  // First call does some memory stuff need to think about.
-  // computeDistances<<<numBlocks, blockSize>>>(numIndexes, query, indexes,
-  //                                            distances);
+  cudaDeviceSynchronize();
 
   cudaEventCreate(&start);
   cudaEventCreate(&stop);
   cudaEventRecord(start, 0);
 
+  int blockSize = 256;
+  int numBlocks = (numIndexes + blockSize - 1) / blockSize;
+
   computeDistances<<<numBlocks, blockSize>>>(numIndexes, query, indexes,
                                              distances);
-  thrust::sequence(thrust::device, keys, keys + numIndexes);
-  thrust::sort_by_key(thrust::device, distances, distances + numIndexes, keys);
-  cudaMemcpy(kNearestKeys, keys, k * sizeof(int), cudaMemcpyDeviceToHost);
 
+  thrust::sequence(thrust::device, keys, keys + numIndexes);
+
+  thrust::sort_by_key(thrust::device, distances, distances + numIndexes, keys);
 
   cudaEventRecord(stop, 0);
   cudaEventSynchronize(stop);
   cudaEventElapsedTime(&time, start, stop);
 
-
-  // cudaDeviceSynchronize();
-
-
   printf("Execution time:  %.3f ms \n", time);
 
-  for (int i = 0; i < k; ++i)
-    printf("%d\n", kNearestKeys[i]);
+  cudaMemcpy(kNearestKeys, keys, k * sizeof(int), cudaMemcpyDeviceToHost);
+  cudaMemcpy(kNearestDistances, distances, k * sizeof(float), cudaMemcpyDeviceToHost);
+
+  // for (int i = 0; i < k; ++i) {
+  //   int idx = kNearestKeys[i];
+  //   cudaMemcpy(&kNearestIndexes[idx], &indexes[idx], sizeof(uint64_cu),
+  //              cudaMemcpyDeviceToHost);
+  // }
+
+  for (int i = 0; i < k; ++i) {
+    printf("%d: %8d  %8.8f\n", i, kNearestKeys[i], kNearestDistances[i]);
+    // printBits(&kNearestIndexes[i]);
+  }
 
   cudaFree(query);
   cudaFree(indexes);
