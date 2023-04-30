@@ -45,6 +45,7 @@ __host__ void printBits(uint64_cu *x) {
 
 int main(void) {
   int numIndexes = 100;
+  int k = 10;
 
   thrust::default_random_engine rng(1234);
   thrust::uniform_int_distribution<uint64_cu> dist(0, UINT64_MAX);
@@ -56,7 +57,13 @@ int main(void) {
   cudaMallocManaged(&query, sizeof(uint64_cu));
   cudaMallocManaged(&indexes, numIndexes * sizeof(uint64_cu));
   cudaMallocManaged(&distances, numIndexes * sizeof(float));
-  cudaMallocManaged(&keys, numIndexes * sizeof(int));
+  cudaMalloc(&keys, numIndexes * sizeof(int));
+
+
+  int *kNearestKeys;
+  kNearestKeys = (int *)malloc(k * sizeof(int));
+
+  // cudaHostAlloc(&kNearestKeys, (size_t)k * sizeof(int));
 
   thrust::generate(indexes, indexes + numIndexes, [&] { return dist(rng); });
 
@@ -68,12 +75,9 @@ int main(void) {
   float time;
   cudaEvent_t start, stop;
 
-  // printf("numIndexes: %d\n", numIndexes);
-  // printf("numBlocks: %d\n", numBlocks);
-
   // First call does some memory stuff need to think about.
-  computeDistances<<<numBlocks, blockSize>>>(numIndexes, query, indexes,
-                                             distances);
+  // computeDistances<<<numBlocks, blockSize>>>(numIndexes, query, indexes,
+  //                                            distances);
 
   cudaEventCreate(&start);
   cudaEventCreate(&stop);
@@ -81,22 +85,26 @@ int main(void) {
 
   computeDistances<<<numBlocks, blockSize>>>(numIndexes, query, indexes,
                                              distances);
-  
   thrust::sequence(thrust::device, keys, keys + numIndexes);
-
   thrust::sort_by_key(thrust::device, distances, distances + numIndexes, keys);
 
-  cudaDeviceSynchronize();
 
   cudaEventRecord(stop, 0);
   cudaEventSynchronize(stop);
   cudaEventElapsedTime(&time, start, stop);
 
 
+  cudaDeviceSynchronize();
+
+  cudaMemcpy(kNearestKeys, keys, k * sizeof(int), cudaMemcpyDeviceToHost);
+
   printf("Execution time:  %.3f ms \n", time);
 
-  for (int i = 0; i < numIndexes; ++i)
-    printf("%d\n", keys[i]);
+  // for (int i = 0; i < numIndexes; ++i)
+  //   printf("%d\n", keys[i]);
+
+  for (int i = 0; i < k; ++i)
+    printf("%d\n", kNearestKeys[i]);
 
   cudaFree(query);
   cudaFree(indexes);
