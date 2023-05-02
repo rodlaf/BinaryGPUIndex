@@ -12,7 +12,7 @@
 
 typedef unsigned long long int uint64_cu;
 
-// Murmur64 Hash
+// murmur64 hash function
 __device__ uint64_cu hash(uint64_cu h) {
   h ^= h >> 33;
   h *= 0xff51afd7ed558ccdL;
@@ -25,8 +25,8 @@ __device__ uint64_cu hash(uint64_cu h) {
 __global__ void randf(uint64_cu *p, int n){
     int idx = threadIdx.x + blockIdx.x * blockDim.x;
     while(idx < n){
-        // add address to index for different results at different addresses
-        p[idx] = hash(&p[idx]); 
+        // hash address
+        p[idx] = hash((uint64_cu)&p[idx]); 
         idx += blockDim.x * gridDim.x;
     }
 }
@@ -57,7 +57,7 @@ __host__ void printBits(uint64_cu *x) {
 
 int main(void) {
   int numIndexes = 970000000; // rough maximum on 24gb of GPU memory
-  int k = 100;
+  int k = 10;
 
   int blockSize = 256;
   int numBlocks = (numIndexes + blockSize - 1) / blockSize;
@@ -120,7 +120,7 @@ int main(void) {
   printf("Query: ");
   printBits(hostQuery);
   for (int i = 0; i < k; ++i) {
-    printf("%5d: %8.8f ", i + 1, kNearestDistances[i]);
+    printf("%5d: %8.8f ", i, kNearestDistances[i]);
     printBits(&kNearestIndexes[i]);
   }
 

@@ -12,10 +12,10 @@ __device__ unsigned int hash(unsigned int x) {
     return x;
 }
 
-__global__ void randf(float *p, int n){
+__global__ void randf(unsigned int *p, int n){
     int idx = threadIdx.x + blockIdx.x * blockDim.x;
     while(idx < n){
-        p[idx] = (float)hash(idx + 1) / UINT32_MAX; 
+        p[idx] = hash(idx + 1); 
         idx += blockDim.x * gridDim.x;
     }
 }
@@ -25,7 +25,7 @@ static const int topk = 100;
 int origin()
 {
     printf("start\n");
-    typedef float T;
+    typedef unsigned int T;
     assert(sizeof(T) == 4); // change this need to change func:randd.
     T *p_d;
     cudaMalloc((void **)&p_d, N * sizeof(T)); 
@@ -34,7 +34,6 @@ int origin()
 
     randf<<<1024, 1024>>>(p_d, N);
     
-
     ////////////////////////////////////////////////////////////////////////////
     cudaEvent_t ev1, ev2;
 	cudaEventCreate(&ev1);
@@ -52,7 +51,7 @@ int origin()
     printf("time for gpu radixfind is %.3f ms\n",elapse);
     printf("my result:\n");
     for (int i = 0; i < topk; ++i){ 
-        printf("%d, %10.10f\n", i, answer[i]);
+        printf("%d, %d\n", i, answer[i]);
     }
 
     cudaFree(p_d);
