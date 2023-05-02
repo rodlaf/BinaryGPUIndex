@@ -12,6 +12,7 @@
 
 typedef unsigned long long int uint64_cu;
 
+// Murmur64 Hash
 __device__ uint64_cu hash(uint64_cu h) {
   h ^= h >> 33;
   h *= 0xff51afd7ed558ccdL;
@@ -25,7 +26,7 @@ __global__ void randf(uint64_cu *p, int n){
     int idx = threadIdx.x + blockIdx.x * blockDim.x;
     while(idx < n){
         // add address to index for different results at different addresses
-        p[idx] = hash((uint64_cu)p + idx); 
+        p[idx] = hash(&p[idx]); 
         idx += blockDim.x * gridDim.x;
     }
 }
@@ -79,7 +80,7 @@ int main(void) {
   // generate random indexes on device
   randf<<<numBlocks, blockSize>>>(indexes, numIndexes);
 
-  // generate random query on device
+  // generate random query on device and transfer to host
   randf<<<1, 1>>>(query, 1);
   cudaMemcpy(hostQuery, query, sizeof(uint64_t), cudaMemcpyDeviceToHost);
 
