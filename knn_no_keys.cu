@@ -87,7 +87,7 @@ int main(void) {
 
     // problem: needs a ton of space, contributes most to duration; no easy
     // parallelizable way to get k smallest values in an unsorted list of floats
-    // ~353ms on ~1B indexes
+    // ~11gb allocated on GPU by this point, needs more than double to execute 
     thrust::sort_by_key(thrust::device, distances, distances + numIndexes,
                         indexes);
 

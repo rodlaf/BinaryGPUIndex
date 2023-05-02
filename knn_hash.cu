@@ -12,6 +12,24 @@
 
 typedef unsigned long long int uint64_cu;
 
+__device__ uint64_cu hash(uint64_cu h) {
+  h ^= h >> 33;
+  h *= 0xff51afd7ed558ccdL;
+  h ^= h >> 33;
+  h *= 0xc4ceb9fe1a85ec53L;
+  h ^= h >> 33;
+  return h;
+}
+
+__global__ void randf(uint64_cu *p, int n){
+    int idx = threadIdx.x + blockIdx.x * blockDim.x;
+    while(idx < n){
+        // add address to index for different results at different addresses
+        p[idx] = hash((uint64_cu)p + idx); 
+        idx += blockDim.x * gridDim.x;
+    }
+}
+
 __device__ void cosineDistance(uint64_cu *a, uint64_cu *b, float *dest) {
   // __popcll computes the Hamming Weight of an integer (e.g., number of bits
   // that are 1)
@@ -45,36 +63,25 @@ int main(void) {
 
   // host memory
   uint64_cu *hostQuery;
-  uint64_cu *hostIndexes;
-  int *kNearestKeys;
   float *kNearestDistances;
   uint64_cu *kNearestIndexes;
   hostQuery = (uint64_cu *)malloc(sizeof(uint64_cu));
-  hostIndexes = (uint64_cu *)malloc(numIndexes * sizeof(uint64_cu));
-  kNearestKeys = (int *)malloc(k * sizeof(int));
   kNearestDistances = (float *)malloc(k * sizeof(float));
   kNearestIndexes = (uint64_cu *)malloc(k * sizeof(uint64_cu));
 
   // device memory
   uint64_cu *query, *indexes;
   float *distances;
-  int *keys;
   cudaMalloc(&query, sizeof(uint64_cu));
   cudaMalloc(&indexes, numIndexes * sizeof(uint64_cu));
   cudaMalloc(&distances, numIndexes * sizeof(float));
-  cudaMalloc(&keys, numIndexes * sizeof(int));
 
-  // generate indexes on host and transfer to device
-  thrust::default_random_engine rng(1234);
-  thrust::uniform_int_distribution<uint64_cu> uniDist(0, UINT64_MAX);
-  thrust::generate(hostIndexes, hostIndexes + numIndexes,
-                   [&] { return uniDist(rng); });
-  cudaMemcpy(indexes, hostIndexes, numIndexes * sizeof(uint64_cu),
-             cudaMemcpyHostToDevice);
+  // generate random indexes on device
+  randf<<<numBlocks, blockSize>>>(indexes, numIndexes);
 
-  // generate query on host and transfer to device
-  *hostQuery = uniDist(rng);
-  cudaMemcpy(query, hostQuery, sizeof(uint64_cu), cudaMemcpyHostToDevice);
+  // generate random query on device
+  randf<<<1, 1>>>(query, 1);
+  cudaMemcpy(hostQuery, query, sizeof(uint64_t), cudaMemcpyDeviceToHost);
 
   float time;
   cudaEvent_t start, stop;
@@ -89,25 +96,17 @@ int main(void) {
     computeDistances<<<numBlocks, blockSize>>>(numIndexes, query, indexes,
                                                distances);
 
-    // generate sequence (0, 1, ..., numIndexes - 1) as keys
-    thrust::sequence(thrust::device, keys, keys + numIndexes);
-
     // problem: needs a ton of space, contributes most to duration; no easy
     // parallelizable way to get k smallest values in an unsorted list of floats
-    // ~353ms on ~1B indexes
-    // ~15gb allocated on GPU by this point, needs more than double to execute 
+    // ~11gb allocated on GPU by this point, needs more than double to execute 
     thrust::sort_by_key(thrust::device, distances, distances + numIndexes,
-                        keys);
+                        indexes);
 
-    // copy k nearest keys, distances, and indexes from device to host
-    cudaMemcpy(kNearestKeys, keys, k * sizeof(int), cudaMemcpyDeviceToHost);
+    // copy k nearest distances and indexes from device to host
     cudaMemcpy(kNearestDistances, distances, k * sizeof(float),
                cudaMemcpyDeviceToHost);
-    for (int i = 0; i < k; ++i) {
-      int idx = kNearestKeys[i];
-      cudaMemcpy(&kNearestIndexes[i], &indexes[idx], sizeof(uint64_cu),
-                 cudaMemcpyDeviceToHost);
-    }
+    cudaMemcpy(kNearestIndexes, indexes, k * sizeof(uint64_cu),
+               cudaMemcpyDeviceToHost);
   }
 
   cudaEventRecord(stop, 0);
@@ -128,12 +127,9 @@ int main(void) {
   cudaFree(query);
   cudaFree(indexes);
   cudaFree(distances);
-  cudaFree(keys);
 
   // free host memory
   free(hostQuery);
-  free(hostIndexes);
-  free(kNearestKeys);
   free(kNearestDistances);
   free(kNearestIndexes);
 
