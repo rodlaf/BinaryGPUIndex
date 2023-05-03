@@ -42,10 +42,10 @@ __global__ void collectHistogram(int n, uint32_cu *xs, int *histogram, int posit
   }
 }
 
-// /*
-//   Copy values in xs that have bits in the specified position equal to those in 
-//   the given pivot bin into the given temp memory.
-// */
+/*
+  Copy values in xs that have bits in the specified position equal to those in 
+  the given pivot bin into the given temp memory.
+*/
 __global__ void relocate(int n, int position, uint32_cu bin, uint32_cu *xs, uint32_cu *temp) {
   int idx = blockIdx.x * blockDim.x + threadIdx.x;
   int stride = blockDim.x * gridDim.x;
@@ -66,7 +66,7 @@ void printBits(uint32_cu *x) {
 
 int main(){
   int n = 1 << 20;
-  int k = 100000;
+  int k = 1000;
 
   int blockSize = 512;
   int numBlocks = (n + blockSize - 1) / blockSize;
@@ -80,58 +80,53 @@ int main(){
 
   /////// Radix Select
 
-  // alloc two temporary arrays
-  uint32_cu *temp1, *temp2;
-  cudaMallocManaged(&temp1, n * sizeof(uint32_cu));
-  cudaMalloc(&temp2, n * sizeof(uint32_cu));
+  // allocate histogram, prefix sum, and temporary arrays
+  int *histogram, *prefixSums;
+  uint32_cu *temp;
 
-  // collect histogram
-  int position = 1; // 4 positions total for a 32 bit unsigned integer
-  int *histogram;
   cudaMallocManaged(&histogram, 256 * sizeof(int));
-
-  collectHistogram<<<numBlocks, blockSize>>>(n, xs, histogram, position);
-  cudaDeviceSynchronize();  
-
-  // compute prefix sums
-  int *prefixSums;
   cudaMallocManaged(&prefixSums, 256 * sizeof(int));
+  cudaMallocManaged(&temp, n * sizeof(uint32_cu));
 
-  thrust::inclusive_scan(thrust::device, histogram, histogram + 256, prefixSums);
+  // iterate over four 8-bit chunks in a 32 bit integer
+  for (int position = 1; position <=1; ++position) {
+    // collect histogram
+    collectHistogram<<<numBlocks, blockSize>>>(n, xs, histogram, position);
+    cudaDeviceSynchronize();  
 
-  // find pivot bin
-  int *pivotPtr = thrust::lower_bound(prefixSums, prefixSums + 256, k); 
-  uint32_cu pivotBin = (uint32_cu)(pivotPtr - prefixSums);
+    // compute prefix sums
+    thrust::inclusive_scan(thrust::device, histogram, histogram + 256, prefixSums);
 
-  // relocate integers in that bin 
-  relocate<<<numBlocks, blockSize>>>(n, position, pivotBin, xs, temp1);
+    // find pivot bin
+    int *pivotPtr = thrust::lower_bound(thrust::device, prefixSums, prefixSums + 256, k); 
+    uint32_cu pivotBin = (uint32_cu)(pivotPtr - prefixSums);
+
+    // copy integers corresponding pivot bin from xs into tmp
+    relocate<<<numBlocks, blockSize>>>(n, position, pivotBin, xs, temp);
+    cudaDeviceSynchronize();
+  }
 
   ///////
 
+  // for (int i = 0; i < 256; ++i){ 
+  //     printf("%d: %d\n", i, prefixSums[i]);
+  // }
 
-  for (int i = 0; i < 256; ++i){ 
-      printf("%d: %d\n", i, prefixSums[i]);
-  }
-
-  printf("pivot: %d\n", (int)(pivotPtr - prefixSums));
+  // printf("pivot: %d\n", (int)(pivotPtr - prefixSums));
 
   int count = 0;
   for (int i = 0; i < n; ++i) {
-    if (temp1[i] != 0) {
+    if (temp[i] != 0) {
       count++;
     }
   }
 
   printf("count: %d\n", count);
 
-  printBits(&pivotBin);
-
-
   cudaFree(xs);
   cudaFree(histogram);
   cudaFree(prefixSums);
-  cudaFree(temp1);
-  cudaFree(temp2);
+  cudaFree(temp);
 
   return 0;    
 }
