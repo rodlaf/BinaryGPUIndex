@@ -88,6 +88,9 @@ int main(){
   cudaMallocManaged(&prefixSums, 256 * sizeof(int));
   cudaMallocManaged(&temp, n * sizeof(uint32_cu));
 
+  // 
+  uint32_cu result = 0;
+
   // iterate over four 8-bit chunks in a 32 bit integer
   for (int position = 1; position <=1; ++position) {
     // collect histogram
@@ -101,7 +104,10 @@ int main(){
     int *pivotPtr = thrust::lower_bound(thrust::device, prefixSums, prefixSums + 256, k); 
     uint32_cu pivotBin = (uint32_cu)(pivotPtr - prefixSums);
 
-    // copy integers corresponding pivot bin from xs into tmp
+    // record in pivot bin in result
+    result = result | (pivotBin << ((sizeof(uint32_cu) - posiiton) * 8));
+
+    // copy integers from corresponding pivot bin from xs into tmp
     relocate<<<numBlocks, blockSize>>>(n, position, pivotBin, xs, temp);
     cudaDeviceSynchronize();
   }
@@ -122,6 +128,8 @@ int main(){
   }
 
   printf("count: %d\n", count);
+  
+  printBits(result);
 
   cudaFree(xs);
   cudaFree(histogram);
