@@ -75,14 +75,13 @@ struct keyValueBelowThreshold {
   uint32_cu threshold;
 
   keyValueBelowThreshold(uint32_cu *values, uint32_cu threshold)
-    : values(values), threshold(threshold) {}
+      : values(values), threshold(threshold) {}
 
-  __device__ bool operator()(int key) {
-    return values[key] < threshold;
-  }
+  __device__ bool operator()(int key) { return values[key] <= threshold; }
 };
 
-uint32_cu radix_select(uint32_cu *values, int *keys, int numValues, int k, int* kSmallestKeys) {
+uint32_cu radix_select(uint32_cu *values, int *keys, int numValues, int k,
+                       int *kSmallestKeys) {
   int blockSize = 512;
   int numBlocks = (numValues + blockSize - 1) / blockSize;
 
@@ -93,7 +92,9 @@ uint32_cu radix_select(uint32_cu *values, int *keys, int numValues, int k, int* 
 
   cudaMalloc(&histogram, 256 * sizeof(int));
   cudaMalloc(&prefixSums, 256 * sizeof(int));
-  cudaMalloc(&deviceKSmallestKeys, k * sizeof(int));
+  // NOTE: size of `deviceKSmallestKeys` can be reduced to `k * sizeof(int)` if
+  // values are guaranteed to be unique
+  cudaMalloc(&deviceKSmallestKeys, numValues * sizeof(int));
   cudaMalloc(&tempValues1, numValues * sizeof(uint32_cu));
   cudaMalloc(&tempValues2, numValues * sizeof(uint32_cu));
 
@@ -129,8 +130,8 @@ uint32_cu radix_select(uint32_cu *values, int *keys, int numValues, int k, int* 
     thrust::inclusive_scan(thrust::device, histogram, histogram + 256,
                            prefixSums);
     // find pivot bin
-    int *pivotPtr =
-        thrust::lower_bound(thrust::device, prefixSums, prefixSums + 256, currK);
+    int *pivotPtr = thrust::lower_bound(thrust::device, prefixSums,
+                                        prefixSums + 256, currK);
     uint32_cu pivot = (uint32_cu)(pivotPtr - prefixSums);
 
     // record pivot bits in the correct position in `kthSmallest`
@@ -164,16 +165,14 @@ uint32_cu radix_select(uint32_cu *values, int *keys, int numValues, int k, int* 
   }
 
   // copy keys whose values are below threshold into `deviceKSmallestKeys`
-  int *copy_ifResult =
-    thrust::copy_if(thrust::device, keys, keys + numValues,
-                    deviceKSmallestKeys, keyValueBelowThreshold(values, kthSmallest));
-  int count = (int)(copy_ifResult - deviceKSmallestKeys);
+  // TODO: maybe version with stencil is faster
+  thrust::copy_if(thrust::device, keys, keys + numValues, deviceKSmallestKeys,
+                  keyValueBelowThreshold(values, kthSmallest));
 
-  // pad kSmallestKeys (TODO)
-
-  // copy from `deviceKSmallestKeys` into host `kSmallestKeys` specified by caller
-  cudaMemcpy(kSmallestKeys, deviceKSmallestKeys, k * sizeof(int), cudaMemcpyDeviceToHost);
-  cudaDeviceSynchronize();
+  // copy from `deviceKSmallestKeys` into host `kSmallestKeys` specified by
+  // caller
+  cudaMemcpy(kSmallestKeys, deviceKSmallestKeys, k * sizeof(int),
+             cudaMemcpyDeviceToHost);
 
   cudaFree(histogram);
   cudaFree(prefixSums);
