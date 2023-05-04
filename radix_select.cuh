@@ -81,27 +81,26 @@ struct keyValueBelowThreshold {
   __device__ bool operator()(int key) {
     return values[key] < threshold;
   }
-}
+};
 
-uint32_cu radix_select(uint32_cu *values, int numValues, int k) {
+uint32_cu radix_select(uint32_cu *values, int *keys, int numValues, int k, int* kSmallestKeys) {
   int blockSize = 512;
   int numBlocks = (numValues + blockSize - 1) / blockSize;
 
-  // allocate histogram, prefix sum, and temporary arrays
+  // allocate histogram, prefix sum, keys, and temporary arrays
   int *histogram, *prefixSums;
-  // TODO: cut down on usage
-  uint32_cu *tempValues1, *tempValues2, *kSmallestKeys; 
+  // TODO: cut down on size of these
+  uint32_cu *tempValues1, *tempValues2, *deviceKSmallestKeys;
 
   cudaMalloc(&histogram, 256 * sizeof(int));
   cudaMalloc(&prefixSums, 256 * sizeof(int));
   cudaMalloc(&tempValues1, numValues * sizeof(uint32_cu));
   cudaMalloc(&tempValues2, numValues * sizeof(uint32_cu));
-  cudaMalloc(&kSmallestKeys, k * sizeof(uint32_cu));
+  cudaMalloc(&deviceKSmallestKeys, numValues * sizeof(uint32_cu));
 
   // allocate a host variable that is used to alter `k` after each iteration
-  uint32_cu *toSubtract, *hostKSmallestKeys;
+  uint32_cu *toSubtract;
   toSubtract = (uint32_cu *)malloc(sizeof(uint32_cu));
-  hostKSmallestKeys = (uint32_cu *)malloc(k * sizeof(uint32_cu));
 
   // declare values that are altered over the iterations
   uint32_cu kthSmallest = 0;
@@ -164,18 +163,20 @@ uint32_cu radix_select(uint32_cu *values, int numValues, int k) {
     }
   }
 
-  // copy keys and values below threhold into return array
+  cudaDeviceSynchronize();
+
+  // copy keys whose values are below threshold into `deviceKSmallestKeys`
   uint32_cu *copy_ifResult =
-    thrust::copy_if(thrust::device, values, values + numValues,
-                    kSmallestKeys, keyValueBelowThreshold(values, kthSmallest));
-  int count = (int)(copy_ifResult - kSmallestKeys);
+    thrust::copy_if(thrust::device, keys, keys + numValues,
+                    deviceKSmallestKeys, keyValueBelowThreshold(values, kthSmallest));
+  int count = (int)(copy_ifResult - deviceKSmallestKeys);
   printf("kSmallestKeys length: %d\n", count);
 
   cudaFree(histogram);
   cudaFree(prefixSums);
   cudaFree(tempValues1);
   cudaFree(tempValues2);
-  cudaFree(kSmallestKeys);
+  cudaFree(deviceKSmallestKeys);
 
   free(toSubtract);
 

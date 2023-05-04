@@ -34,6 +34,14 @@ int main() {
   rand<<<numBlocks, blockSize>>>(n, xs);
   cudaDeviceSynchronize();
 
+  // allocate and initalize keys on device
+  int *keys;
+  cudaMalloc(&keys, n * sizeof(int));
+  thrust::sequence(thrust::device, keys, keys + n);
+
+  // allocate kSmallestKeys and kSmallestValues on host
+  int *kSmallestKeys = (int *)malloc(k * sizeof(int));
+
   // run radix select
   float time;
   cudaEvent_t start, stop;
@@ -42,32 +50,35 @@ int main() {
   cudaEventCreate(&stop);
   cudaEventRecord(start, 0);
 
-  uint32_cu result = radix_select(xs, n, k);
+  uint32_cu result = radix_select(xs, keys, n, k, kSmallestKeys);
 
   cudaEventRecord(stop, 0);
   cudaEventSynchronize(stop);
   cudaEventElapsedTime(&time, start, stop);
 
   printf("Execution time:  %.3f ms \n", time);
-
-  cudaEventCreate(&start);
-  cudaEventCreate(&stop);
-  cudaEventRecord(start, 0);
-
-  thrust::sort(thrust::device, xs, xs + n);
-  uint32_cu *result2 = (uint32_cu *)malloc(sizeof(uint32_cu)); 
-  cudaMemcpy(result2, &xs[k - 1], sizeof(uint32_cu), cudaMemcpyDeviceToHost);
-
-  cudaEventRecord(stop, 0);
-  cudaEventSynchronize(stop);
-  cudaEventElapsedTime(&time, start, stop);
-
-  printf("Execution time:  %.3f ms \n", time);
-
   printf("Result: %u\n", result);
-  printf("Result2: %u\n", *result2);
+
+  // // run thrust sort
+  // cudaEventCreate(&start);
+  // cudaEventCreate(&stop);
+  // cudaEventRecord(start, 0);
+
+  // thrust::sort(thrust::device, xs, xs + n);
+  // uint32_cu *result2 = (uint32_cu *)malloc(sizeof(uint32_cu)); 
+  // cudaMemcpy(result2, &xs[k - 1], sizeof(uint32_cu), cudaMemcpyDeviceToHost);
+
+  // cudaEventRecord(stop, 0);
+  // cudaEventSynchronize(stop);
+  // cudaEventElapsedTime(&time, start, stop);
+
+  // printf("Execution time:  %.3f ms \n", time);
+  // printf("Result2: %u\n", *result2);
 
   cudaFree(xs);
+  cudaFree(keys);
+
+  free(kSmallestKeys);
 
   return 0;
 }
