@@ -59,6 +59,10 @@ int main() {
   printf("Execution time:  %.3f ms \n", time);
   printf("Result: %u\n", result);
 
+  for (int i = 0; i < k; ++i) {
+    printf("kSmallestKeys: %d: %d\n", i, kSmallestKeys[i]);
+  }
+
   // // run thrust sort
   // cudaEventCreate(&start);
   // cudaEventCreate(&stop);

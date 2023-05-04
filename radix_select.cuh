@@ -87,15 +87,15 @@ uint32_cu radix_select(uint32_cu *values, int *keys, int numValues, int k, int* 
   int numBlocks = (numValues + blockSize - 1) / blockSize;
 
   // allocate histogram, prefix sum, keys, and temporary arrays
-  int *histogram, *prefixSums;
+  int *histogram, *prefixSums, *deviceKSmallestKeys;
   // TODO: cut down on size of these
-  uint32_cu *tempValues1, *tempValues2, *deviceKSmallestKeys;
+  uint32_cu *tempValues1, *tempValues2;
 
   cudaMalloc(&histogram, 256 * sizeof(int));
   cudaMalloc(&prefixSums, 256 * sizeof(int));
+  cudaMalloc(&deviceKSmallestKeys, k * sizeof(int));
   cudaMalloc(&tempValues1, numValues * sizeof(uint32_cu));
   cudaMalloc(&tempValues2, numValues * sizeof(uint32_cu));
-  cudaMalloc(&deviceKSmallestKeys, numValues * sizeof(uint32_cu));
 
   // allocate a host variable that is used to alter `k` after each iteration
   uint32_cu *toSubtract;
@@ -104,6 +104,7 @@ uint32_cu radix_select(uint32_cu *values, int *keys, int numValues, int k, int* 
   // declare values that are altered over the iterations
   uint32_cu kthSmallest = 0;
   int currNumValues = numValues;
+  int currK = k;
   uint32_cu *currValues = values;
   uint32_cu *tempValues = tempValues1;
 
@@ -129,7 +130,7 @@ uint32_cu radix_select(uint32_cu *values, int *keys, int numValues, int k, int* 
                            prefixSums);
     // find pivot bin
     int *pivotPtr =
-        thrust::lower_bound(thrust::device, prefixSums, prefixSums + 256, k);
+        thrust::lower_bound(thrust::device, prefixSums, prefixSums + 256, currK);
     uint32_cu pivot = (uint32_cu)(pivotPtr - prefixSums);
 
     // record pivot bits in the correct position in `kthSmallest`
@@ -142,14 +143,14 @@ uint32_cu radix_select(uint32_cu *values, int *keys, int numValues, int k, int* 
                         tempValues, belongsToPivotBin(position, pivot));
     int count = (int)(copy_ifResult - tempValues);
 
-    // in next iteration we change `k` to account for all elements in lesser
+    // in next iteration we change `currK` to account for all elements in lesser
     // bins, `currNumValues` to account for the elements only in the pivot bin,
     // and `currValues` to refer to the temporarily allocated memory
     currNumValues = count;
     if (pivot > 0) {
       cudaMemcpy(toSubtract, &prefixSums[pivot - 1], sizeof(uint32_cu),
                  cudaMemcpyDeviceToHost);
-      k -= *toSubtract;
+      currK -= *toSubtract; // TODO: need currK
     }
 
     // update `currValues` and cycle between temporary arrays
@@ -162,17 +163,17 @@ uint32_cu radix_select(uint32_cu *values, int *keys, int numValues, int k, int* 
     }
   }
 
-  cudaDeviceSynchronize();
-
   // copy keys whose values are below threshold into `deviceKSmallestKeys`
-  uint32_cu *copy_ifResult =
+  int *copy_ifResult =
     thrust::copy_if(thrust::device, keys, keys + numValues,
                     deviceKSmallestKeys, keyValueBelowThreshold(values, kthSmallest));
   int count = (int)(copy_ifResult - deviceKSmallestKeys);
-  printf("kSmallestKeys length: %d\n", count);
 
-  // copy from `deviceKSmallestKeys` into `kSmallestKeys` on host specified by caller
-  cudaMemcpy(kSmallestKeys, deviceKSmallestKeys, k, cudaMemcpyDeviceToHost);
+  // pad kSmallestKeys (TODO)
+
+  // copy from `deviceKSmallestKeys` into host `kSmallestKeys` specified by caller
+  cudaMemcpy(kSmallestKeys, deviceKSmallestKeys, k * sizeof(int), cudaMemcpyDeviceToHost);
+  cudaDeviceSynchronize();
 
   cudaFree(histogram);
   cudaFree(prefixSums);
