@@ -82,8 +82,11 @@ uint32_cu radix_select(uint32_cu *xs, int n, int k) {
     // bins, n to account for the elements only in the pivot bin, and xs 
     // to refer to the temporarily allocated memory
     n = count;
-    if (pivot > 0)
-      k -= prefixSums[pivot - 1];
+    if (pivot > 0) {
+      uint32_cu *toSubtract;
+      cudaMemcpy(toSubtract, &prefixSums[pivot - 1], sizeof(uint32_cu), cudaMemcpyDeviceToHost);
+      k -= *toSubtract;
+    }
     xs = temp; // this will only make a diference in the first iteration
   }
 

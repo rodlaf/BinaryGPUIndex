@@ -34,10 +34,7 @@ int main() {
   rand<<<numBlocks, blockSize>>>(n, xs);
   cudaDeviceSynchronize();
 
-
   // run radix select
-
-
   float time;
   cudaEvent_t start, stop;
 
@@ -52,7 +49,6 @@ int main() {
   cudaEventElapsedTime(&time, start, stop);
 
   printf("Execution time:  %.3f ms \n", time);
-
 
   printf("result: %u\n", result);
 
