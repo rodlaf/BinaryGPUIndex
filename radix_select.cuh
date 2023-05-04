@@ -14,12 +14,12 @@ __device__ uint32_cu positionBits(uint32_cu value, int position) {
   return (value >> ((sizeof(uint32_cu) - position) * 8)) & 0xff;
 }
 
-__global__ void collectHistogram(int n, uint32_cu *values, int *histogram,
+__global__ void collectHistogram(int numValues, uint32_cu *values, int *histogram,
                                  int position) {
   int idx = blockIdx.x * blockDim.x + threadIdx.x;
   int stride = blockDim.x * gridDim.x;
 
-  for (int i = idx; i < n; i += stride) {
+  for (int i = idx; i < numValues; i += stride) {
     uint32_cu bin = positionBits(values[i], position);
     atomicAdd(&histogram[bin], 1);
   }
@@ -27,10 +27,10 @@ __global__ void collectHistogram(int n, uint32_cu *values, int *histogram,
 
 /*
   This histogram collector uses shared memory. This is a performance improvement
-  only for when n is very large (e.g., this is only used in the first
+  only for when numValues is very large (e.g., this is only used in the first
   iteration).
 */
-__global__ void collectHistogramSharedMem(int n, uint32_cu *values, int *histogram,
+__global__ void collectHistogramSharedMem(int numValues, uint32_cu *values, int *histogram,
                                           int position) {
   int idx = blockIdx.x * blockDim.x + threadIdx.x;
   int stride = blockDim.x * gridDim.x;
@@ -45,7 +45,7 @@ __global__ void collectHistogramSharedMem(int n, uint32_cu *values, int *histogr
 
   __syncthreads();
 
-  for (int i = idx; i < n; i += stride) {
+  for (int i = idx; i < numValues; i += stride) {
     uint32_cu bin = positionBits(values[i], position);
     atomicAdd(&sharedHistogram[bin], 1);
   }
@@ -71,9 +71,9 @@ struct belongsToPivotBin {
   }
 };
 
-uint32_cu radix_select(uint32_cu *values, int n, int k) {
+uint32_cu radix_select(uint32_cu *values, int numValues, int k) {
   int blockSize = 512;
-  int numBlocks = (n + blockSize - 1) / blockSize;
+  int numBlocks = (numValues + blockSize - 1) / blockSize;
 
   // allocate histogram, prefix sum, and temporary arrays
   int *histogram, *prefixSums;
@@ -81,13 +81,16 @@ uint32_cu radix_select(uint32_cu *values, int n, int k) {
 
   cudaMalloc(&histogram, 256 * sizeof(int));
   cudaMalloc(&prefixSums, 256 * sizeof(int));
-  cudaMalloc(&temp, n * sizeof(uint32_cu));
+  cudaMalloc(&temp, numValues * sizeof(uint32_cu));
 
   // allocate a host variable that is used to alter k after each iteration
   uint32_cu *toSubtract;
   toSubtract = (uint32_cu *)malloc(sizeof(uint32_cu));
 
+  // declare values that are altered over the iterations
   uint32_cu result = 0;
+  int currNumValues = numValues;
+  uint32_cu *currValues = values;
 
   // iterate over four 8-bit chunks in a 32-bit integer
   for (int position = 1; position <= 4; ++position) {
@@ -97,10 +100,10 @@ uint32_cu radix_select(uint32_cu *values, int n, int k) {
     // and one that doesn't--for different iterations.
     cudaMemset(histogram, 0, 256 * sizeof(int));
     if (position == 1)
-      collectHistogramSharedMem<<<numBlocks, blockSize>>>(n, values, histogram,
+      collectHistogramSharedMem<<<numBlocks, blockSize>>>(currNumValues, currValues, histogram,
                                                           position);
     else
-      collectHistogram<<<numBlocks, blockSize>>>(n, values, histogram, position);
+      collectHistogram<<<numBlocks, blockSize>>>(currNumValues, currValues, histogram, position);
     cudaDeviceSynchronize();
 
     // compute prefix sums
@@ -115,22 +118,22 @@ uint32_cu radix_select(uint32_cu *values, int n, int k) {
     // record in pivot bin in result
     result = result | (pivot << ((sizeof(uint32_cu) - position) * 8));
 
-    // copy integers from their corresponding pivot from `values` into `temp` and
+    // copy integers from their corresponding pivot from `currValues` into `temp` and
     // record the count
     uint32_cu *copy_ifResult = thrust::copy_if(
-        thrust::device, values, values + n, temp, belongsToPivotBin(position, pivot));
+        thrust::device, currValues, currValues + currNumValues, temp, belongsToPivotBin(position, pivot));
     int count = (int)(copy_ifResult - temp);
 
     // in next iteration we change k to account for all elements in lesser
-    // bins, n to account for the elements only in the pivot bin, and values
+    // bins, currNumValues to account for the elements only in the pivot bin, and currValues
     // to refer to the temporarily allocated memory
-    n = count;
+    currNumValues = count;
     if (pivot > 0) {
       cudaMemcpy(toSubtract, &prefixSums[pivot - 1], sizeof(uint32_cu),
                  cudaMemcpyDeviceToHost);
       k -= *toSubtract;
     }
-    values = temp; // this will only make a diference in the first iteration
+    currValues = temp; // this will only make a difference in the first iteration
   }
 
   cudaFree(histogram);
