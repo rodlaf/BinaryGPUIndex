@@ -18,12 +18,44 @@ __global__ void collectHistogram(int n, uint32_cu *xs, int *histogram,
                                  int position) {
   int idx = blockIdx.x * blockDim.x + threadIdx.x;
   int stride = blockDim.x * gridDim.x;
+  int id = threadIdx.x;
+
+  // first collect in per-block shared memory
+  __shared__ int sharedHistogram[256];
+
+  if (id < 256) {
+    // for (int i = idx; i < n; i += stride) {
+    sharedHistogram[id] = 0; // need to zero out first
+    // }
+  }
+
+  __syncthreads();
 
   for (int i = idx; i < n; i += stride) {
     uint32_cu bin = positionBits(xs[i], position);
-    atomicAdd(&histogram[bin], 1);
+    atomicAdd(&sharedHistogram[bin], 1);
+  }
+
+  __syncthreads();
+
+  // now, use 256 threads per block to add shared histogram to global histogram
+  if (id < 256) {
+    // for (int i = idx; i < n; i += stride) {
+      atomicAdd(&histogram[id], sharedHistogram[id]);
+    // }
   }
 }
+
+// __global__ void collectHistogram(int n, uint32_cu *xs, int *histogram,
+//                                  int position) {
+//   int idx = blockIdx.x * blockDim.x + threadIdx.x;
+//   int stride = blockDim.x * gridDim.x;
+
+//   for (int i = idx; i < n; i += stride) {
+//     uint32_cu bin = positionBits(xs[i], position);
+//     atomicAdd(&histogram[bin], 1);
+//   }
+// }
 
 // used in thrust::copy_if as a predicate
 struct belongsToPivotBin {
@@ -50,17 +82,31 @@ uint32_cu radix_select(uint32_cu *xs, int n, int k) {
   cudaMalloc(&prefixSums, 256 * sizeof(int));
   cudaMalloc(&temp, n * sizeof(uint32_cu));
 
-  uint32_cu *toSubtract = (uint32_cu *)malloc(sizeof(uint32_cu));
+  // allocate a host variable that is used to alter k after each iteration
+  uint32_cu *toSubtract;
+  toSubtract = (uint32_cu *)malloc(sizeof(uint32_cu));
 
   // result
   uint32_cu result = 0;
 
+
   // iterate over four 8-bit chunks in a 32-bit integer
   for (int position = 1; position <= 4; ++position) {
+    float time;
+    cudaEvent_t start, stop;
+    cudaEventCreate(&start);
+    cudaEventCreate(&stop);
+    cudaEventRecord(start, 0);
+
     // collect histogram
     cudaMemset(histogram, 0, 256 * sizeof(int));
     collectHistogram<<<numBlocks, blockSize>>>(n, xs, histogram, position);
     cudaDeviceSynchronize();
+
+    cudaEventRecord(stop, 0);
+    cudaEventSynchronize(stop);
+    cudaEventElapsedTime(&time, start, stop);
+    printf("Execution time:  %.3f ms \n", time);
 
     // compute prefix sums
     cudaMemset(prefixSums, 0, 256 * sizeof(int));
@@ -89,11 +135,14 @@ uint32_cu radix_select(uint32_cu *xs, int n, int k) {
       k -= *toSubtract;
     }
     xs = temp; // this will only make a diference in the first iteration
+
   }
 
   cudaFree(histogram);
   cudaFree(prefixSums);
   cudaFree(temp);
+
+  free(toSubtract);
 
   return result;
 }
