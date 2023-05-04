@@ -89,7 +89,7 @@ uint32_cu radix_select(uint32_cu *values, int numValues, int k) {
   toSubtract = (uint32_cu *)malloc(sizeof(uint32_cu));
 
   // declare values that are altered over the iterations
-  uint32_cu result = 0;
+  uint32_cu kthSmallest = 0;
   int currNumValues = numValues;
   uint32_cu *currValues = values;
   uint32_cu *tempValues = tempValues1;
@@ -118,8 +118,8 @@ uint32_cu radix_select(uint32_cu *values, int numValues, int k) {
         thrust::lower_bound(thrust::device, prefixSums, prefixSums + 256, k);
     uint32_cu pivot = (uint32_cu)(pivotPtr - prefixSums);
 
-    // record pivot bits in the correct position in result
-    result = result | (pivot << ((sizeof(uint32_cu) - position) * 8));
+    // record pivot bits in the correct position in kthSmallest
+    kthSmallest = kthSmallest | (pivot << ((sizeof(uint32_cu) - position) * 8));
 
     // copy integers from their corresponding pivot from `currValues` into `temp` and
     // record the count
@@ -154,5 +154,5 @@ uint32_cu radix_select(uint32_cu *values, int numValues, int k) {
 
   free(toSubtract);
 
-  return result;
+  return kthSmallest;
 }
