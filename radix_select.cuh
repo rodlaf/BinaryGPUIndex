@@ -58,7 +58,7 @@ __global__ void collectHistogramSharedMem(int numValues, uint32_cu *values, int 
   }
 }
 
-// used in thrust::copy_if as a predicate
+// predicate for thrust::copy_if
 struct belongsToPivotBin {
   int position;
   uint32_cu pivot;
@@ -77,11 +77,12 @@ uint32_cu radix_select(uint32_cu *values, int numValues, int k) {
 
   // allocate histogram, prefix sum, and temporary arrays
   int *histogram, *prefixSums;
-  uint32_cu *temp;
+  uint32_cu *tempValues1, *tempValues2; // TODO: cut down on usage
 
   cudaMalloc(&histogram, 256 * sizeof(int));
   cudaMalloc(&prefixSums, 256 * sizeof(int));
-  cudaMalloc(&temp, numValues * sizeof(uint32_cu));
+  cudaMalloc(&tempValues1, numValues * sizeof(uint32_cu));
+  cudaMalloc(&tempValues2, numValues * sizeof(uint32_cu));
 
   // allocate a host variable that is used to alter k after each iteration
   uint32_cu *toSubtract;
@@ -91,8 +92,10 @@ uint32_cu radix_select(uint32_cu *values, int numValues, int k) {
   uint32_cu result = 0;
   int currNumValues = numValues;
   uint32_cu *currValues = values;
+  uint32_cu *tempValues = tempValues1;
 
-  // iterate over four 8-bit chunks in a 32-bit integer
+  // iterate over four 8-bit chunks in a 32-bit integer to find kth smallest
+  // value
   for (int position = 1; position <= 4; ++position) {
     // Collect histogram. This is the most expensive part of the algorithm
     // and accounts for 90%+ of the duration. For this reason, we are putting
@@ -115,14 +118,14 @@ uint32_cu radix_select(uint32_cu *values, int numValues, int k) {
         thrust::lower_bound(thrust::device, prefixSums, prefixSums + 256, k);
     uint32_cu pivot = (uint32_cu)(pivotPtr - prefixSums);
 
-    // record in pivot bin in result
+    // record pivot bits in the correct position in result
     result = result | (pivot << ((sizeof(uint32_cu) - position) * 8));
 
     // copy integers from their corresponding pivot from `currValues` into `temp` and
     // record the count
     uint32_cu *copy_ifResult = thrust::copy_if(
-        thrust::device, currValues, currValues + currNumValues, temp, belongsToPivotBin(position, pivot));
-    int count = (int)(copy_ifResult - temp);
+        thrust::device, currValues, currValues + currNumValues, tempValues, belongsToPivotBin(position, pivot));
+    int count = (int)(copy_ifResult - tempValues);
 
     // in next iteration we change k to account for all elements in lesser
     // bins, currNumValues to account for the elements only in the pivot bin, and currValues
@@ -133,12 +136,21 @@ uint32_cu radix_select(uint32_cu *values, int numValues, int k) {
                  cudaMemcpyDeviceToHost);
       k -= *toSubtract;
     }
-    currValues = temp; // this will only make a difference in the first iteration
+
+    // update currValues and cycle between temporary arrays
+    if (currValues == values || currValues == tempValues2) {
+      currValues = tempValues1;
+      tempValues = tempValues2;
+    } else if (currValues == tempValues1) {
+      currValues = tempValues2;
+      tempValues = tempValues1;
+    }
   }
 
   cudaFree(histogram);
   cudaFree(prefixSums);
-  cudaFree(temp);
+  cudaFree(tempValues1);
+  cudaFree(tempValues2);
 
   free(toSubtract);
 

@@ -22,7 +22,7 @@ __global__ void rand(int n, uint32_cu *xs) {
 }
 
 int main() {
-  int n = 100;
+  int n = 1 << 30;
   int k = 10;
 
   int blockSize = 512;
