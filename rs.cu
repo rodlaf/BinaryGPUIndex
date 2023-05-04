@@ -2,10 +2,6 @@
 #include <stdio.h>
 #include <stdlib.h>
 
-#include <bitset>
-
-
-
 #include "radix_select.cuh"
 
 __device__ uint32_cu hash(uint32_cu a) {
@@ -25,9 +21,8 @@ __global__ void rand(int n, uint32_cu *xs) {
     xs[idx] = hash(~idx);
 }
 
-
 int main() {
-  int n = 1 << 20;
+  int n = 1 << 30;
   int k = 20000;
 
   int blockSize = 512;
@@ -35,14 +30,31 @@ int main() {
 
   // generate random numbers
   uint32_cu *xs;
-  cudaMallocManaged(&xs, n * sizeof(uint32_cu));
+  cudaMalloc(&xs, n * sizeof(uint32_cu));
   rand<<<numBlocks, blockSize>>>(n, xs);
   cudaDeviceSynchronize();
 
+
   // run radix select
+
+
+  float time;
+  cudaEvent_t start, stop;
+
+  cudaEventCreate(&start);
+  cudaEventCreate(&stop);
+  cudaEventRecord(start, 0);
+
   uint32_cu result = radix_select(xs, n, k);
 
-  printBits(&result);
+  cudaEventRecord(stop, 0);
+  cudaEventSynchronize(stop);
+  cudaEventElapsedTime(&time, start, stop);
+
+  printf("Execution time:  %.3f ms \n", time);
+
+
+  printf("result: %u\n", result);
 
   cudaFree(xs);
 
