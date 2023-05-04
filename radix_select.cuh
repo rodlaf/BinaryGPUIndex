@@ -79,9 +79,18 @@ struct keyValueBelowThreshold {
 
   __device__ bool operator()(int key) { return values[key] <= threshold; }
 };
+struct valueBelowThreshold {
+  uint32_cu *values; 
+  uint32_cu threshold;
+
+  valueBelowThreshold(uint32_cu *values, uint32_cu threshold)
+    : values(values), threshold(threshold) {}
+
+  __device__ bool operator()(uint32_cu value) { return value <= threshold; }
+};
 
 uint32_cu radix_select(uint32_cu *values, int *keys, int numValues, int k,
-                       int *kSmallestKeys) {
+                       uint32_cu *kSmallestValues, int *kSmallestKeys) {
   int blockSize = 512;
   int numBlocks = (numValues + blockSize - 1) / blockSize;
 
@@ -93,7 +102,9 @@ uint32_cu radix_select(uint32_cu *values, int *keys, int numValues, int k,
   cudaMalloc(&histogram, 256 * sizeof(int));
   cudaMalloc(&prefixSums, 256 * sizeof(int));
   // NOTE: size of `deviceKSmallestKeys` can be reduced to `k * sizeof(int)` if
-  // values are guaranteed to be unique
+  // values are guaranteed to be unique 
+  // TODO: reuse one of tempValues1 or 2. will need to change keys from int
+  // to unsigned int type.
   cudaMalloc(&deviceKSmallestKeys, numValues * sizeof(int));
   cudaMalloc(&tempValues1, numValues * sizeof(uint32_cu));
   cudaMalloc(&tempValues2, numValues * sizeof(uint32_cu));
@@ -151,7 +162,7 @@ uint32_cu radix_select(uint32_cu *values, int *keys, int numValues, int k,
     if (pivot > 0) {
       cudaMemcpy(toSubtract, &prefixSums[pivot - 1], sizeof(uint32_cu),
                  cudaMemcpyDeviceToHost);
-      currK -= *toSubtract; // TODO: need currK
+      currK -= *toSubtract;
     }
 
     // update `currValues` and cycle between temporary arrays
@@ -172,6 +183,14 @@ uint32_cu radix_select(uint32_cu *values, int *keys, int numValues, int k,
   // copy from `deviceKSmallestKeys` into host `kSmallestKeys` specified by
   // caller
   cudaMemcpy(kSmallestKeys, deviceKSmallestKeys, k * sizeof(int),
+             cudaMemcpyDeviceToHost);
+
+  // Re-use tempValues1 to copy all values less than or equal to `kthSmallest`
+  thrust::copy_if(thrust::device, values, values + numValues, tempValues1,
+                  valueBelowThreshold(values, kthSmallest));
+  
+  // copy from `tempValues1` into host `kSmallestValues` specified by caller
+  cudaMemcpy(kSmallestValues, tempValues1, k * sizeof(uint32_cu),
              cudaMemcpyDeviceToHost);
 
   cudaFree(histogram);

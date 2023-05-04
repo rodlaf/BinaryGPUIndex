@@ -41,6 +41,7 @@ int main() {
 
   // allocate kSmallestKeys and kSmallestValues on host
   int *kSmallestKeys = (int *)malloc(k * sizeof(int));
+  uint32_cu *kSmallestValues = (uint32_cu *)malloc(k * sizeof(int));
 
   // run radix select
   float time;
@@ -50,7 +51,7 @@ int main() {
   cudaEventCreate(&stop);
   cudaEventRecord(start, 0);
 
-  uint32_cu result = radix_select(xs, keys, n, k, kSmallestKeys);
+  uint32_cu result = radix_select(xs, keys, n, k, kSmallestValues, kSmallestKeys);
 
   cudaEventRecord(stop, 0);
   cudaEventSynchronize(stop);
@@ -61,6 +62,9 @@ int main() {
 
   for (int i = 0; i < k; ++i) {
     printf("kSmallestKeys: %d: %d\n", i, kSmallestKeys[i]);
+  }
+  for (int i = 0; i < k; ++i) {
+    printf("kSmallestValues: %d: %u\n", i, kSmallestValues[i]);
   }
 
   // // run thrust sort
