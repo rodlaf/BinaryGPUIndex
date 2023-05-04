@@ -47,8 +47,10 @@ uint32_cu radix_select(uint32_cu *xs, int n, int k) {
   uint32_cu *temp;
 
   cudaMalloc(&histogram, 256 * sizeof(int));
-  cudaMallocManaged(&prefixSums, 256 * sizeof(int));
+  cudaMalloc(&prefixSums, 256 * sizeof(int));
   cudaMalloc(&temp, n * sizeof(uint32_cu));
+
+  uint32_cu *toSubtract = (uint32_cu *)malloc(sizeof(uint32_cu));
 
   // result
   uint32_cu result = 0;
@@ -83,7 +85,6 @@ uint32_cu radix_select(uint32_cu *xs, int n, int k) {
     // to refer to the temporarily allocated memory
     n = count;
     if (pivot > 0) {
-      uint32_cu *toSubtract = (uint32_cu *)malloc(sizeof(uint32_cu));
       cudaMemcpy(toSubtract, &prefixSums[pivot - 1], sizeof(uint32_cu), cudaMemcpyDeviceToHost);
       k -= *toSubtract;
     }
