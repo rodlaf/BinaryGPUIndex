@@ -10,17 +10,17 @@
 // 32 bit unsigned integer
 typedef unsigned int uint32_cu;
 
-__device__ uint32_cu positionBits(uint32_cu x, int position) {
-  return (x >> ((sizeof(uint32_cu) - position) * 8)) & 0xff;
+__device__ uint32_cu positionBits(uint32_cu value, int position) {
+  return (value >> ((sizeof(uint32_cu) - position) * 8)) & 0xff;
 }
 
-__global__ void collectHistogram(int n, uint32_cu *xs, int *histogram,
+__global__ void collectHistogram(int n, uint32_cu *values, int *histogram,
                                  int position) {
   int idx = blockIdx.x * blockDim.x + threadIdx.x;
   int stride = blockDim.x * gridDim.x;
 
   for (int i = idx; i < n; i += stride) {
-    uint32_cu bin = positionBits(xs[i], position);
+    uint32_cu bin = positionBits(values[i], position);
     atomicAdd(&histogram[bin], 1);
   }
 }
@@ -30,7 +30,7 @@ __global__ void collectHistogram(int n, uint32_cu *xs, int *histogram,
   only for when n is very large (e.g., this is only used in the first
   iteration).
 */
-__global__ void collectHistogramSharedMem(int n, uint32_cu *xs, int *histogram,
+__global__ void collectHistogramSharedMem(int n, uint32_cu *values, int *histogram,
                                           int position) {
   int idx = blockIdx.x * blockDim.x + threadIdx.x;
   int stride = blockDim.x * gridDim.x;
@@ -46,7 +46,7 @@ __global__ void collectHistogramSharedMem(int n, uint32_cu *xs, int *histogram,
   __syncthreads();
 
   for (int i = idx; i < n; i += stride) {
-    uint32_cu bin = positionBits(xs[i], position);
+    uint32_cu bin = positionBits(values[i], position);
     atomicAdd(&sharedHistogram[bin], 1);
   }
 
@@ -66,12 +66,12 @@ struct belongsToPivotBin {
   belongsToPivotBin(int position, uint32_cu pivot)
       : position(position), pivot(pivot) {}
 
-  __device__ bool operator()(const uint32_cu x) {
-    return positionBits(x, position) == pivot;
+  __device__ bool operator()(const uint32_cu value) {
+    return positionBits(value, position) == pivot;
   }
 };
 
-uint32_cu radix_select(uint32_cu *xs, int n, int k) {
+uint32_cu radix_select(uint32_cu *values, int n, int k) {
   int blockSize = 512;
   int numBlocks = (n + blockSize - 1) / blockSize;
 
@@ -97,10 +97,10 @@ uint32_cu radix_select(uint32_cu *xs, int n, int k) {
     // and one that doesn't--for different iterations.
     cudaMemset(histogram, 0, 256 * sizeof(int));
     if (position == 1)
-      collectHistogramSharedMem<<<numBlocks, blockSize>>>(n, xs, histogram,
+      collectHistogramSharedMem<<<numBlocks, blockSize>>>(n, values, histogram,
                                                           position);
     else
-      collectHistogram<<<numBlocks, blockSize>>>(n, xs, histogram, position);
+      collectHistogram<<<numBlocks, blockSize>>>(n, values, histogram, position);
     cudaDeviceSynchronize();
 
     // compute prefix sums
@@ -115,14 +115,14 @@ uint32_cu radix_select(uint32_cu *xs, int n, int k) {
     // record in pivot bin in result
     result = result | (pivot << ((sizeof(uint32_cu) - position) * 8));
 
-    // copy integers from their corresponding pivot from `xs` into `temp` and
+    // copy integers from their corresponding pivot from `values` into `temp` and
     // record the count
     uint32_cu *copy_ifResult = thrust::copy_if(
-        thrust::device, xs, xs + n, temp, belongsToPivotBin(position, pivot));
+        thrust::device, values, values + n, temp, belongsToPivotBin(position, pivot));
     int count = (int)(copy_ifResult - temp);
 
     // in next iteration we change k to account for all elements in lesser
-    // bins, n to account for the elements only in the pivot bin, and xs
+    // bins, n to account for the elements only in the pivot bin, and values
     // to refer to the temporarily allocated memory
     n = count;
     if (pivot > 0) {
@@ -130,7 +130,7 @@ uint32_cu radix_select(uint32_cu *xs, int n, int k) {
                  cudaMemcpyDeviceToHost);
       k -= *toSubtract;
     }
-    xs = temp; // this will only make a diference in the first iteration
+    values = temp; // this will only make a diference in the first iteration
   }
 
   cudaFree(histogram);
