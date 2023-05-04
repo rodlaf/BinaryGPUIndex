@@ -70,7 +70,6 @@ struct belongsToPivotBin {
     return positionBits(value, position) == pivot;
   }
 };
-
 struct keyValueBelowThreshold {
   uint32_cu *values;
   uint32_cu threshold;
@@ -116,7 +115,7 @@ uint32_cu radix_select(uint32_cu *values, int *keys, int numValues, int k, int* 
     // in the effort to make two implementations--one that uses shared memory
     // and one that doesn't--for different iterations.
     cudaMemset(histogram, 0, 256 * sizeof(int));
-    if (position == 1)
+    if (position == 1) // TODO: Change to `numValues`-based threshold
       collectHistogramSharedMem<<<numBlocks, blockSize>>>(
           currNumValues, currValues, histogram, position);
     else
@@ -171,6 +170,9 @@ uint32_cu radix_select(uint32_cu *values, int *keys, int numValues, int k, int* 
                     deviceKSmallestKeys, keyValueBelowThreshold(values, kthSmallest));
   int count = (int)(copy_ifResult - deviceKSmallestKeys);
   printf("kSmallestKeys length: %d\n", count);
+
+  // copy from `deviceKSmallestKeys` into `kSmallestKeys` on host specified by caller
+  cudaMemcpy(kSmallestKeys, deviceKSmallestKeys, k, cudaMemcpyDeviceToHost);
 
   cudaFree(histogram);
   cudaFree(prefixSums);
