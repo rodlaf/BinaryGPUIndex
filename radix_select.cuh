@@ -7,15 +7,15 @@
 #include <thrust/execution_policy.h>
 #include <thrust/scan.h>
 
-// 32 bit unsigned integer
+// 32-bit unsigned integer
 typedef unsigned int uint32_cu;
 
 __device__ uint32_cu positionBits(uint32_cu value, int position) {
   return (value >> ((sizeof(uint32_cu) - position) * 8)) & 0xff;
 }
 
-__global__ void collectHistogram(int numValues, uint32_cu *values, int *histogram,
-                                 int position) {
+__global__ void collectHistogram(int numValues, uint32_cu *values,
+                                 int *histogram, int position) {
   int idx = blockIdx.x * blockDim.x + threadIdx.x;
   int stride = blockDim.x * gridDim.x;
 
@@ -30,8 +30,8 @@ __global__ void collectHistogram(int numValues, uint32_cu *values, int *histogra
   only for when numValues is very large (e.g., this is only used in the first
   iteration).
 */
-__global__ void collectHistogramSharedMem(int numValues, uint32_cu *values, int *histogram,
-                                          int position) {
+__global__ void collectHistogramSharedMem(int numValues, uint32_cu *values,
+                                          int *histogram, int position) {
   int idx = blockIdx.x * blockDim.x + threadIdx.x;
   int stride = blockDim.x * gridDim.x;
   int id = threadIdx.x;
@@ -58,7 +58,7 @@ __global__ void collectHistogramSharedMem(int numValues, uint32_cu *values, int 
   }
 }
 
-// predicate for thrust::copy_if
+// predicates for `thrust::copy_if`
 struct belongsToPivotBin {
   int position;
   uint32_cu pivot;
@@ -66,10 +66,22 @@ struct belongsToPivotBin {
   belongsToPivotBin(int position, uint32_cu pivot)
       : position(position), pivot(pivot) {}
 
-  __device__ bool operator()(const uint32_cu value) {
+  __device__ bool operator()(uint32_cu value) {
     return positionBits(value, position) == pivot;
   }
 };
+
+struct keyValueBelowThreshold {
+  uint32_cu *values;
+  uint32_cu threshold;
+
+  keyValueBelowThreshold(uint32_cu *values, uint32_cu threshold)
+    : values(values), threshold(threshold) {}
+
+  __device__ bool operator()(int key) {
+    return values[key] < threshold;
+  }
+}
 
 uint32_cu radix_select(uint32_cu *values, int numValues, int k) {
   int blockSize = 512;
@@ -77,16 +89,19 @@ uint32_cu radix_select(uint32_cu *values, int numValues, int k) {
 
   // allocate histogram, prefix sum, and temporary arrays
   int *histogram, *prefixSums;
-  uint32_cu *tempValues1, *tempValues2; // TODO: cut down on usage
+  // TODO: cut down on usage
+  uint32_cu *tempValues1, *tempValues2, *kSmallestKeys; 
 
   cudaMalloc(&histogram, 256 * sizeof(int));
   cudaMalloc(&prefixSums, 256 * sizeof(int));
   cudaMalloc(&tempValues1, numValues * sizeof(uint32_cu));
   cudaMalloc(&tempValues2, numValues * sizeof(uint32_cu));
+  cudaMalloc(&kSmallestKeys, k * sizeof(uint32_cu));
 
-  // allocate a host variable that is used to alter k after each iteration
-  uint32_cu *toSubtract;
+  // allocate a host variable that is used to alter `k` after each iteration
+  uint32_cu *toSubtract, *hostKSmallestKeys;
   toSubtract = (uint32_cu *)malloc(sizeof(uint32_cu));
+  hostKSmallestKeys = (uint32_cu *)malloc(k * sizeof(uint32_cu));
 
   // declare values that are altered over the iterations
   uint32_cu kthSmallest = 0;
@@ -103,10 +118,11 @@ uint32_cu radix_select(uint32_cu *values, int numValues, int k) {
     // and one that doesn't--for different iterations.
     cudaMemset(histogram, 0, 256 * sizeof(int));
     if (position == 1)
-      collectHistogramSharedMem<<<numBlocks, blockSize>>>(currNumValues, currValues, histogram,
-                                                          position);
+      collectHistogramSharedMem<<<numBlocks, blockSize>>>(
+          currNumValues, currValues, histogram, position);
     else
-      collectHistogram<<<numBlocks, blockSize>>>(currNumValues, currValues, histogram, position);
+      collectHistogram<<<numBlocks, blockSize>>>(currNumValues, currValues,
+                                                 histogram, position);
     cudaDeviceSynchronize();
 
     // compute prefix sums
@@ -118,18 +134,19 @@ uint32_cu radix_select(uint32_cu *values, int numValues, int k) {
         thrust::lower_bound(thrust::device, prefixSums, prefixSums + 256, k);
     uint32_cu pivot = (uint32_cu)(pivotPtr - prefixSums);
 
-    // record pivot bits in the correct position in kthSmallest
+    // record pivot bits in the correct position in `kthSmallest`
     kthSmallest = kthSmallest | (pivot << ((sizeof(uint32_cu) - position) * 8));
 
-    // copy integers from their corresponding pivot from `currValues` into `temp` and
-    // record the count
-    uint32_cu *copy_ifResult = thrust::copy_if(
-        thrust::device, currValues, currValues + currNumValues, tempValues, belongsToPivotBin(position, pivot));
+    // copy integers from their corresponding pivot from `currValues` into
+    // `temp` and record the count
+    uint32_cu *copy_ifResult =
+        thrust::copy_if(thrust::device, currValues, currValues + currNumValues,
+                        tempValues, belongsToPivotBin(position, pivot));
     int count = (int)(copy_ifResult - tempValues);
 
-    // in next iteration we change k to account for all elements in lesser
-    // bins, currNumValues to account for the elements only in the pivot bin, and currValues
-    // to refer to the temporarily allocated memory
+    // in next iteration we change `k` to account for all elements in lesser
+    // bins, `currNumValues` to account for the elements only in the pivot bin,
+    // and `currValues` to refer to the temporarily allocated memory
     currNumValues = count;
     if (pivot > 0) {
       cudaMemcpy(toSubtract, &prefixSums[pivot - 1], sizeof(uint32_cu),
@@ -137,7 +154,7 @@ uint32_cu radix_select(uint32_cu *values, int numValues, int k) {
       k -= *toSubtract;
     }
 
-    // update currValues and cycle between temporary arrays
+    // update `currValues` and cycle between temporary arrays
     if (currValues == values || currValues == tempValues2) {
       currValues = tempValues1;
       tempValues = tempValues2;
@@ -147,10 +164,18 @@ uint32_cu radix_select(uint32_cu *values, int numValues, int k) {
     }
   }
 
+  // copy keys and values below threhold into return array
+  uint32_cu *copy_ifResult =
+    thrust::copy_if(thrust::device, values, values + numValues,
+                    kSmallestKeys, keyValueBelowThreshold(values, kthSmallest));
+  int count = (int)(copy_ifResult - kSmallestKeys);
+  printf("kSmallestKeys length: %d\n", count);
+
   cudaFree(histogram);
   cudaFree(prefixSums);
   cudaFree(tempValues1);
   cudaFree(tempValues2);
+  cudaFree(kSmallestKeys);
 
   free(toSubtract);
 
