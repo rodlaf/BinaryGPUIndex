@@ -97,6 +97,8 @@ void radix_select(uint32_cu *values, int *keys, int numValues, int k,
   // TODO: reuse one of tempValues1 or 2. will need to change keys from int
   // to unsigned int type.
   cudaMalloc(&deviceKSmallestKeys, k * sizeof(int));
+  // TODO: experiment speed change when having these passed instead of 
+  // allocated on the fly every time a call is made
   cudaMalloc(&tempValues1, numValues * sizeof(uint32_cu));
   cudaMalloc(&tempValues2, numValues * sizeof(uint32_cu));
 

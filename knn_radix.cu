@@ -10,9 +10,8 @@
 #include <thrust/random.h>
 #include <thrust/reduce.h>
 
+#include "knn.inl"
 #include "radix_select.h"
-
-typedef unsigned long long int uint64_cu;
 
 // murmur64 hash function
 __device__ uint64_cu hash(uint64_cu h) {
@@ -24,38 +23,43 @@ __device__ uint64_cu hash(uint64_cu h) {
   return h;
 }
 
-__global__ void randf(uint64_cu *p, int n){
-    int idx = threadIdx.x + blockIdx.x * blockDim.x;
-    while(idx < n){
-        // hash address
-        p[idx] = hash((uint64_cu)&p[idx]); 
-        idx += blockDim.x * gridDim.x;
-    }
-}
-
-// TEMPORARILY MODIFIED to return an unsigned integer
-__device__ void cosineDistance(uint64_cu *a, uint64_cu *b, unsigned int *dest) {
-  // __popcll computes the Hamming Weight of an integer (e.g., number of bits
-  // that are 1)
-  float a_dot_b = (float)__popcll(*a & *b);
-  float a_dot_a = (float)__popcll(*a);
-  float b_dot_b = (float)__popcll(*b);
-
-  *dest = (unsigned int)((1 - (a_dot_b / (sqrt(a_dot_a) * sqrt(b_dot_b)))) * UINT32_MAX);
-}
-
-__global__ void computeDistances(int numIndexes, uint64_cu *query,
-                                 uint64_cu *indexes, unsigned int *distances) {
-  int idx = blockIdx.x * blockDim.x + threadIdx.x;
-  int stride = blockDim.x * gridDim.x;
-
-  for (int i = idx; i < numIndexes; i += stride)
-    cosineDistance(query, &indexes[i], &distances[i]);
+__global__ void randf(uint64_cu *p, int n) {
+  int idx = threadIdx.x + blockIdx.x * blockDim.x;
+  while (idx < n) {
+    // hash address
+    p[idx] = hash((uint64_cu)&p[idx]);
+    idx += blockDim.x * gridDim.x;
+  }
 }
 
 __host__ void printBits(uint64_cu *x) {
   std::bitset<sizeof(uint64_cu) * CHAR_BIT> b(*x);
   std::cout << b << std::endl;
+}
+
+// TODO: Pass distances space
+void kNearestNeighbors(uint64_cu *vectors, int *keys, uint64_cu *query,
+                       int numVectors, int k, uint32_cu *kNearestDistances,
+                       uint64_cu *kNearestVectors, int *kNearestKeys,
+                       uint32_cu *distances) {
+  int blockSize = 256;
+  int numBlocks = (numVectors + blockSize - 1) / blockSize;
+
+  // Compute distances
+  computeDistances<<<numBlocks, blockSize>>>(numVectors, query, vectors,
+                                             distances);
+  cudaDeviceSynchronize();
+
+  // Select smallest `k` distances
+  radix_select(distances, keys, numVectors, k, kNearestDistances, kNearestKeys);
+
+  // copy indicated indexes from device to host
+  // TODO: should use a kernel for this
+  for (int i = 0; i < k; ++i) {
+    int idx = kNearestKeys[i];
+    cudaMemcpy(&kNearestVectors[i], &vectors[idx], sizeof(uint64_cu),
+               cudaMemcpyDeviceToHost);
+  }
 }
 
 int main(void) {
@@ -65,23 +69,30 @@ int main(void) {
   int blockSize = 256;
   int numBlocks = (numIndexes + blockSize - 1) / blockSize;
 
-  // allocate host memory
+  // allocate space on host for query, k nearest distances, and k nearest
+  // indexes
   uint64_cu *hostQuery;
   unsigned int *kNearestDistances;
   uint64_cu *kNearestIndexes;
-  int *kNearestKeys;
   hostQuery = (uint64_cu *)malloc(sizeof(uint64_cu));
   kNearestDistances = (unsigned int *)malloc(k * sizeof(unsigned int));
   kNearestIndexes = (uint64_cu *)malloc(k * sizeof(uint64_cu));
+
+  // allocate space to receive k nearest keys on host
+  int *kNearestKeys;
   kNearestKeys = (int *)malloc(k * sizeof(int));
-
-
-  // allocate device memory
+  // allocate space on device for query and indexes
   uint64_cu *query, *indexes;
-  unsigned int *distances;
   cudaMalloc(&query, sizeof(uint64_cu));
   cudaMalloc(&indexes, numIndexes * sizeof(uint64_cu));
+
+  unsigned int *distances;
   cudaMalloc(&distances, numIndexes * sizeof(unsigned int));
+
+  // allocate and initalize keys on device
+  int *keys;
+  cudaMalloc(&keys, numIndexes * sizeof(int));
+  thrust::sequence(thrust::device, keys, keys + numIndexes);
 
   // generate random indexes on device
   randf<<<numBlocks, blockSize>>>(indexes, numIndexes);
@@ -92,11 +103,7 @@ int main(void) {
   cudaDeviceSynchronize();
   cudaMemcpy(hostQuery, query, sizeof(uint64_t), cudaMemcpyDeviceToHost);
 
-  // allocate and initalize keys on device
-  int *keys;
-  cudaMalloc(&keys, numIndexes * sizeof(int));
-  thrust::sequence(thrust::device, keys, keys + numIndexes);
-
+  // run and time kNearestNeighbors call
   float time;
   cudaEvent_t start, stop;
 
@@ -104,22 +111,8 @@ int main(void) {
   cudaEventCreate(&stop);
   cudaEventRecord(start, 0);
 
-  // compute and retrieve k nearest neighbors of a query index
-  {
-    // ~23ms on ~1B indexes
-    computeDistances<<<numBlocks, blockSize>>>(numIndexes, query, indexes,
-                                               distances);
-
-    radix_select(distances, keys, numIndexes, k, kNearestDistances, kNearestKeys);
-
-    // copy indicated indexes from device to host
-    // TODO: should use a kernel for this
-    for (int i = 0; i < k; ++i) {
-      int idx = kNearestKeys[i];
-      cudaMemcpy(&kNearestIndexes[i], &indexes[idx], sizeof(uint64_cu),
-                 cudaMemcpyDeviceToHost);
-    }
-  }
+  kNearestNeighbors(indexes, keys, query, numIndexes, k, kNearestDistances,
+                    kNearestIndexes, kNearestKeys, distances);
 
   cudaEventRecord(stop, 0);
   cudaEventSynchronize(stop);
