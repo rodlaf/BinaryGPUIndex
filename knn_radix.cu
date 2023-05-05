@@ -10,7 +10,7 @@
 #include <thrust/random.h>
 #include <thrust/reduce.h>
 
-#include "radix_select.cuh"
+#include "radix_select.h"
 
 typedef unsigned long long int uint64_cu;
 

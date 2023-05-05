@@ -2,7 +2,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 
-#include "radix_select.cuh"
+#include "radix_select.h"
 
 __device__ uint32_cu hash(uint32_cu a) {
   a = (a ^ 61) ^ (a >> 16);
@@ -23,7 +23,7 @@ __global__ void rand(int n, uint32_cu *xs) {
 
 int main() {
   int n = 1 << 30;
-  int k = 100;
+  int k = 10;
 
   int blockSize = 512;
   int numBlocks = (n + blockSize - 1) / blockSize;
@@ -72,15 +72,12 @@ int main() {
   // cudaEventRecord(start, 0);
 
   // thrust::sort(thrust::device, xs, xs + n);
-  // uint32_cu *result2 = (uint32_cu *)malloc(sizeof(uint32_cu)); 
-  // cudaMemcpy(result2, &xs[k - 1], sizeof(uint32_cu), cudaMemcpyDeviceToHost);
 
   // cudaEventRecord(stop, 0);
   // cudaEventSynchronize(stop);
   // cudaEventElapsedTime(&time, start, stop);
 
   // printf("Execution time:  %.3f ms \n", time);
-  // printf("Result2: %u\n", *result2);
 
   cudaFree(xs);
   cudaFree(keys);
