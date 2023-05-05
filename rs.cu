@@ -51,14 +51,13 @@ int main() {
   cudaEventCreate(&stop);
   cudaEventRecord(start, 0);
 
-  uint32_cu result = radix_select(xs, keys, n, k, kSmallestValues, kSmallestKeys);
+  radix_select(xs, keys, n, k, kSmallestValues, kSmallestKeys);
 
   cudaEventRecord(stop, 0);
   cudaEventSynchronize(stop);
   cudaEventElapsedTime(&time, start, stop);
 
   printf("Execution time:  %.3f ms \n", time);
-  printf("Result: %u\n", result);
 
   for (int i = 0; i < k; ++i) {
     printf("kSmallestKeys: %d: %d\n", i, kSmallestKeys[i]);

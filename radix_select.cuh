@@ -28,7 +28,7 @@ __global__ void collectHistogram(int numValues, uint32_cu *values,
 /*
   This histogram collector uses shared memory. This is a performance improvement
   only for when numValues is very large (e.g., this is only used in the first
-  iteration).
+  iteration). TODO: combine two versions somehow
 */
 __global__ void collectHistogramSharedMem(int numValues, uint32_cu *values,
                                           int *histogram, int position) {
@@ -80,7 +80,7 @@ struct valueBelowThreshold {
   __device__ bool operator()(uint32_cu value) { return value <= threshold; }
 };
 
-uint32_cu radix_select(uint32_cu *values, int *keys, int numValues, int k,
+void radix_select(uint32_cu *values, int *keys, int numValues, int k,
                        uint32_cu *kSmallestValues, int *kSmallestKeys) {
   int blockSize = 512;
   int numBlocks = (numValues + blockSize - 1) / blockSize;
@@ -93,10 +93,10 @@ uint32_cu radix_select(uint32_cu *values, int *keys, int numValues, int k,
   cudaMalloc(&histogram, 256 * sizeof(int));
   cudaMalloc(&prefixSums, 256 * sizeof(int));
   // NOTE: size of `deviceKSmallestKeys` can be reduced to `k * sizeof(int)` if
-  // values are guaranteed to be unique
+  // values are guaranteed to be unique (should be `numValues * sizeof(int)`!)
   // TODO: reuse one of tempValues1 or 2. will need to change keys from int
   // to unsigned int type.
-  cudaMalloc(&deviceKSmallestKeys, numValues * sizeof(int));
+  cudaMalloc(&deviceKSmallestKeys, k * sizeof(int));
   cudaMalloc(&tempValues1, numValues * sizeof(uint32_cu));
   cudaMalloc(&tempValues2, numValues * sizeof(uint32_cu));
 
@@ -146,9 +146,8 @@ uint32_cu radix_select(uint32_cu *values, int *keys, int numValues, int k,
                         tempValues, belongsToPivotBin(position, pivot));
     int count = (int)(copy_ifResult - tempValues);
 
-    // in next iteration we change `currK` to account for all elements in lesser
-    // bins, `currNumValues` to account for the elements only in the pivot bin,
-    // and `currValues` to refer to the temporarily allocated memory
+    // in next iteration make `currNumValues` the number of elements in the pivot bin 
+    // and subtract from `currK` the number of elements in lesser bins.  
     currNumValues = count;
     if (pivot > 0) {
       cudaMemcpy(toSubtract, &prefixSums[pivot - 1], sizeof(uint32_cu),
@@ -156,7 +155,7 @@ uint32_cu radix_select(uint32_cu *values, int *keys, int numValues, int k,
       currK -= *toSubtract;
     }
 
-    // update `currValues` and cycle between temporary arrays
+    // update `currValues` pointer and cycle between temporary arrays
     if (currValues == values || currValues == tempValues2) {
       currValues = tempValues1;
       tempValues = tempValues2;
@@ -191,6 +190,4 @@ uint32_cu radix_select(uint32_cu *values, int *keys, int numValues, int k,
   cudaFree(deviceKSmallestKeys);
 
   free(toSubtract);
-
-  return kthSmallest;
 }
