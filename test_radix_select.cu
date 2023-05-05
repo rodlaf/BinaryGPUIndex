@@ -4,7 +4,7 @@
 
 #include "radix_select.h"
 
-__device__ uint32_cu hash(uint32_cu a) {
+__device__ unsigned hash(unsigned a) {
   a = (a ^ 61) ^ (a >> 16);
   a = a + (a << 3);
   a = a ^ (a >> 4);
@@ -13,7 +13,7 @@ __device__ uint32_cu hash(uint32_cu a) {
   return a;
 }
 
-__global__ void rand(int n, uint32_cu *xs) {
+__global__ void rand(int n, unsigned *xs) {
   int idx = blockIdx.x * blockDim.x + threadIdx.x;
   int stride = blockDim.x * gridDim.x;
 
@@ -29,19 +29,19 @@ int main() {
   int numBlocks = (n + blockSize - 1) / blockSize;
 
   // generate random numbers
-  uint32_cu *xs;
-  cudaMalloc(&xs, n * sizeof(uint32_cu));
+  unsigned *xs;
+  cudaMalloc(&xs, n * sizeof(unsigned));
   rand<<<numBlocks, blockSize>>>(n, xs);
   cudaDeviceSynchronize();
 
   // allocate and initalize keys on device
-  int *keys;
-  cudaMalloc(&keys, n * sizeof(int));
+  unsigned *keys;
+  cudaMalloc(&keys, n * sizeof(unsigned));
   thrust::sequence(thrust::device, keys, keys + n);
 
   // allocate kSmallestKeys and kSmallestValues on host
-  int *kSmallestKeys = (int *)malloc(k * sizeof(int));
-  uint32_cu *kSmallestValues = (uint32_cu *)malloc(k * sizeof(int));
+  unsigned *kSmallestKeys = (unsigned *)malloc(k * sizeof(unsigned));
+  unsigned *kSmallestValues = (unsigned *)malloc(k * sizeof(unsigned));
 
   // run radix select
   float time;
@@ -60,7 +60,7 @@ int main() {
   printf("Execution time:  %.3f ms \n", time);
 
   for (int i = 0; i < k; ++i) {
-    printf("kSmallestKeys: %d: %d\n", i, kSmallestKeys[i]);
+    printf("kSmallestKeys: %d: %u\n", i, kSmallestKeys[i]);
   }
   for (int i = 0; i < k; ++i) {
     printf("kSmallestValues: %d: %u\n", i, kSmallestValues[i]);

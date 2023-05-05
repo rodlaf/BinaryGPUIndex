@@ -7,20 +7,17 @@
 #include <thrust/execution_policy.h>
 #include <thrust/scan.h>
 
-// 32-bit unsigned integer
-typedef unsigned int uint32_cu;
-
-__device__ uint32_cu positionBits(uint32_cu value, int position) {
-  return (value >> ((sizeof(uint32_cu) - position) * 8)) & 0xff;
+__device__ unsigned positionBits(unsigned value, int position) {
+  return (value >> ((sizeof(unsigned) - position) * 8)) & 0xff;
 }
 
-__global__ void collectHistogram(int numValues, uint32_cu *values,
-                                 int *histogram, int position) {
+__global__ void collectHistogram(int numValues, unsigned *values,
+                                 unsigned *histogram, int position) {
   int idx = blockIdx.x * blockDim.x + threadIdx.x;
   int stride = blockDim.x * gridDim.x;
 
   for (int i = idx; i < numValues; i += stride) {
-    uint32_cu bin = positionBits(values[i], position);
+    unsigned bin = positionBits(values[i], position);
     atomicAdd(&histogram[bin], 1);
   }
 }
@@ -30,14 +27,14 @@ __global__ void collectHistogram(int numValues, uint32_cu *values,
   only for when numValues is very large (e.g., this is only used in the first
   iteration). TODO: combine two versions somehow
 */
-__global__ void collectHistogramSharedMem(int numValues, uint32_cu *values,
-                                          int *histogram, int position) {
+__global__ void collectHistogramSharedMem(int numValues, unsigned *values,
+                                          unsigned *histogram, int position) {
   int idx = blockIdx.x * blockDim.x + threadIdx.x;
   int stride = blockDim.x * gridDim.x;
   int id = threadIdx.x;
 
   // first collect in per-block shared memory
-  __shared__ int sharedHistogram[256];
+  __shared__ unsigned sharedHistogram[256];
 
   if (id < 256) {
     sharedHistogram[id] = 0; // need to zero out first
@@ -46,7 +43,7 @@ __global__ void collectHistogramSharedMem(int numValues, uint32_cu *values,
   __syncthreads();
 
   for (int i = idx; i < numValues; i += stride) {
-    uint32_cu bin = positionBits(values[i], position);
+    unsigned bin = positionBits(values[i], position);
     atomicAdd(&sharedHistogram[bin], 1);
   }
 
@@ -61,57 +58,52 @@ __global__ void collectHistogramSharedMem(int numValues, uint32_cu *values,
 // predicates for `thrust::copy_if`
 struct belongsToPivotBin {
   int position;
-  uint32_cu pivot;
+  unsigned pivot;
 
-  belongsToPivotBin(int position, uint32_cu pivot)
+  belongsToPivotBin(int position, unsigned pivot)
       : position(position), pivot(pivot) {}
 
-  __device__ bool operator()(uint32_cu value) {
+  __device__ bool operator()(unsigned value) {
     return positionBits(value, position) == pivot;
   }
 };
 struct valueBelowThreshold {
-  uint32_cu *values;
-  uint32_cu threshold;
+  unsigned *values;
+  unsigned threshold;
 
-  valueBelowThreshold(uint32_cu *values, uint32_cu threshold)
+  valueBelowThreshold(unsigned *values, unsigned threshold)
       : values(values), threshold(threshold) {}
 
-  __device__ bool operator()(uint32_cu value) { return value <= threshold; }
+  __device__ bool operator()(unsigned value) { return value <= threshold; }
 };
 
-void radix_select(uint32_cu *values, int *keys, int numValues, int k,
-                       uint32_cu *kSmallestValues, int *kSmallestKeys) {
+void radix_select(unsigned *values, unsigned *keys, int numValues, int k,
+                       unsigned *kSmallestValues, unsigned *kSmallestKeys) {
   int blockSize = 512;
   int numBlocks = (numValues + blockSize - 1) / blockSize;
 
-  // allocate histogram, prefix sum, keys, and temporary arrays
-  int *histogram, *prefixSums, *deviceKSmallestKeys;
+  // allocate histogram, prefix sum, and temporary arrays
+  unsigned *histogram, *prefixSums;
   // TODO: cut down on size of these
-  uint32_cu *tempValues1, *tempValues2;
+  unsigned *tempValues1, *tempValues2;
 
-  cudaMalloc(&histogram, 256 * sizeof(int));
-  cudaMalloc(&prefixSums, 256 * sizeof(int));
-  // NOTE: size of `deviceKSmallestKeys` can be reduced to `k * sizeof(int)` if
-  // values are guaranteed to be unique (should be `numValues * sizeof(int)`!)
-  // TODO: reuse one of tempValues1 or 2. will need to change keys from int
-  // to unsigned int type.
-  cudaMalloc(&deviceKSmallestKeys, k * sizeof(int));
+  cudaMalloc(&histogram, 256 * sizeof(unsigned));
+  cudaMalloc(&prefixSums, 256 * sizeof(unsigned));
   // TODO: experiment speed change when having these passed instead of 
   // allocated on the fly every time a call is made
-  cudaMalloc(&tempValues1, numValues * sizeof(uint32_cu));
-  cudaMalloc(&tempValues2, numValues * sizeof(uint32_cu));
+  cudaMalloc(&tempValues1, numValues * sizeof(unsigned));
+  cudaMalloc(&tempValues2, numValues * sizeof(unsigned));
 
   // allocate a host variable that is used to alter `k` after each iteration
-  uint32_cu *toSubtract;
-  toSubtract = (uint32_cu *)malloc(sizeof(uint32_cu));
+  unsigned *toSubtract;
+  toSubtract = (unsigned *)malloc(sizeof(unsigned));
 
   // declare values that are altered over the iterations
-  uint32_cu kthSmallest = 0;
+  unsigned kthSmallest = 0;
   int currNumValues = numValues;
   int currK = k;
-  uint32_cu *currValues = values;
-  uint32_cu *tempValues = tempValues1;
+  unsigned *currValues = values;
+  unsigned *tempValues = tempValues1;
 
   // iterate over four 8-bit chunks in a 32-bit integer to find kth smallest
   // value
@@ -120,7 +112,7 @@ void radix_select(uint32_cu *values, int *keys, int numValues, int k,
     // and accounts for 90%+ of the duration. For this reason, we are putting
     // in the effort to make two implementations--one that uses shared memory
     // and one that doesn't--for different iterations.
-    cudaMemset(histogram, 0, 256 * sizeof(int));
+    cudaMemset(histogram, 0, 256 * sizeof(unsigned));
     if (position == 1) // TODO: Change to `numValues`-based threshold
       collectHistogramSharedMem<<<numBlocks, blockSize>>>(
           currNumValues, currValues, histogram, position);
@@ -130,20 +122,20 @@ void radix_select(uint32_cu *values, int *keys, int numValues, int k,
     cudaDeviceSynchronize();
 
     // compute prefix sums
-    cudaMemset(prefixSums, 0, 256 * sizeof(int));
+    cudaMemset(prefixSums, 0, 256 * sizeof(unsigned));
     thrust::inclusive_scan(thrust::device, histogram, histogram + 256,
                            prefixSums);
     // find pivot bin
-    int *pivotPtr = thrust::lower_bound(thrust::device, prefixSums,
+    unsigned *pivotPtr = thrust::lower_bound(thrust::device, prefixSums,
                                         prefixSums + 256, currK);
-    uint32_cu pivot = (uint32_cu)(pivotPtr - prefixSums);
+    unsigned pivot = (unsigned)(pivotPtr - prefixSums);
 
     // record pivot bits in the correct position in `kthSmallest`
-    kthSmallest = kthSmallest | (pivot << ((sizeof(uint32_cu) - position) * 8));
+    kthSmallest = kthSmallest | (pivot << ((sizeof(unsigned) - position) * 8));
 
     // copy integers from their corresponding pivot from `currValues` into
     // `temp` and record the count
-    uint32_cu *copy_ifResult =
+    unsigned *copy_ifResult =
         thrust::copy_if(thrust::device, currValues, currValues + currNumValues,
                         tempValues, belongsToPivotBin(position, pivot));
     int count = (int)(copy_ifResult - tempValues);
@@ -153,7 +145,7 @@ void radix_select(uint32_cu *values, int *keys, int numValues, int k,
     // bins.  
     currNumValues = count;
     if (pivot > 0) {
-      cudaMemcpy(toSubtract, &prefixSums[pivot - 1], sizeof(uint32_cu),
+      cudaMemcpy(toSubtract, &prefixSums[pivot - 1], sizeof(unsigned),
                  cudaMemcpyDeviceToHost);
       currK -= *toSubtract;
     }
@@ -168,29 +160,28 @@ void radix_select(uint32_cu *values, int *keys, int numValues, int k,
     }
   }
 
-  // copy keys whose values are below threshold into `deviceKSmallestKeys`
+  // reuse `tempValues1` to copy keys whose values are below threshold
   thrust::copy_if(thrust::device, keys, keys + numValues, values,
-                  deviceKSmallestKeys,
+                  tempValues1,
                   valueBelowThreshold(values, kthSmallest));
 
-  // Re-use tempValues1 to copy all values less than or equal to `kthSmallest`
-  thrust::copy_if(thrust::device, values, values + numValues, tempValues1,
+  // reuse `tempValues2` to copy all values less than or equal to `kthSmallest`
+  thrust::copy_if(thrust::device, values, values + numValues, tempValues2,
                   valueBelowThreshold(values, kthSmallest));
 
-  // copy from `deviceKSmallestKeys` into host `kSmallestKeys` specified by
+  // copy from `tempValues1` into host `kSmallestKeys` specified by
   // caller
-  cudaMemcpy(kSmallestKeys, deviceKSmallestKeys, k * sizeof(int),
+  cudaMemcpy(kSmallestKeys, tempValues1, k * sizeof(unsigned),
              cudaMemcpyDeviceToHost);
 
-  // copy from `tempValues1` into host `kSmallestValues` specified by caller
-  cudaMemcpy(kSmallestValues, tempValues1, k * sizeof(uint32_cu),
+  // copy from `tempValues2` into host `kSmallestValues` specified by caller
+  cudaMemcpy(kSmallestValues, tempValues2, k * sizeof(unsigned),
              cudaMemcpyDeviceToHost);
 
   cudaFree(histogram);
   cudaFree(prefixSums);
   cudaFree(tempValues1);
   cudaFree(tempValues2);
-  cudaFree(deviceKSmallestKeys);
 
   free(toSubtract);
 }

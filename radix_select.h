@@ -1,8 +1,6 @@
 #pragma once
 
-typedef unsigned int uint32_cu;
-
-void radix_select(uint32_cu *values, int *keys, int numValues, int k,
-                       uint32_cu *kSmallestValues, int *kSmallestKeys); 
+void radix_select(unsigned *values, unsigned *keys, int numValues, int k,
+                  unsigned *kSmallestValues, unsigned *kSmallestKeys); 
 
 #include "radix_select.inl"
