@@ -20,8 +20,8 @@ __device__ unsigned positionBits(unsigned value, int position) {
 /*
   Collect histogram.
 */
-__global__ void collectHistogramSharedMem(int numValues, unsigned *values,
-                                          unsigned *histogram, int position) {
+__global__ void collectHistogram(int numValues, unsigned *values,
+                                 unsigned *histogram, int position) {
   int idx = blockIdx.x * blockDim.x + threadIdx.x;
   int stride = blockDim.x * gridDim.x;
   int id = threadIdx.x;
@@ -79,9 +79,9 @@ struct valueEqualToThreshold {
   __device__ bool operator()(unsigned value) { return value == threshold; }
 };
 
-void radix_select(unsigned *values, unsigned *keys, int numValues, int k,
-                  unsigned *kSmallestValues, unsigned *kSmallestKeys,
-                  unsigned *workingMem1, unsigned *workingMem2) {
+void radixSelect(unsigned *values, unsigned *keys, int numValues, int k,
+                 unsigned *kSmallestValues, unsigned *kSmallestKeys,
+                 unsigned *workingMem1, unsigned *workingMem2) {
   // allocate histogram, prefix sum, and temporary arrays
   unsigned *histogram, *prefixSums;
 
@@ -108,8 +108,8 @@ void radix_select(unsigned *values, unsigned *keys, int numValues, int k,
     // Collect histogram
     cudaMemset(histogram, 0, 256 * sizeof(unsigned));
 
-    collectHistogramSharedMem<<<numBlocks, blockSize>>>(currNumValues, currValues,
-                                                 histogram, position);
+    collectHistogram<<<numBlocks, blockSize>>>(currNumValues, currValues,
+                                               histogram, position);
     cudaDeviceSynchronize();
 
     // compute prefix sums

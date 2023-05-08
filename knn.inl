@@ -43,7 +43,7 @@ void kNearestNeighbors(uint64_cu *vectors, unsigned *keys, uint64_cu *query,
   cudaDeviceSynchronize();
 
   // select smallest `k` distances
-  radix_select(distances, keys, numVectors, k, uintKNearestDistances, kNearestKeys,
+  radixSelect(distances, keys, numVectors, k, uintKNearestDistances, kNearestKeys,
                workingMem1, workingMem2);
 
   for (int i = 0; i < k; ++i) {
