@@ -83,15 +83,6 @@ struct valueBelowThreshold {
 
   __device__ bool operator()(unsigned value) { return value < threshold; }
 };
-struct valueEqualToThreshold {
-  unsigned *values;
-  unsigned threshold;
-
-  valueEqualToThreshold(unsigned *values, unsigned threshold)
-      : values(values), threshold(threshold) {}
-
-  __device__ bool operator()(unsigned value) { return value == threshold; }
-};
 
 void radix_select(unsigned *values, unsigned *keys, int numValues, int k,
                   unsigned *kSmallestValues, unsigned *kSmallestKeys) {
@@ -148,34 +139,32 @@ void radix_select(unsigned *values, unsigned *keys, int numValues, int k,
     kthSmallestValue =
         kthSmallestValue | (pivot << ((sizeof(unsigned) - position) * 8));
 
+    // copy integers from their corresponding pivot from `currValues` into
+    // `temp` and record the count
+    unsigned *copy_ifResult =
+        thrust::copy_if(thrust::device, currValues, currValues + currNumValues,
+                        tempValues, belongsToPivotBin(position, pivot));
+    unsigned binCount = copy_ifResult - tempValues;
 
-    if (position <= 3) {
-      // copy integers from their corresponding pivot from `currValues` into
-      // `temp` and record the count
-      unsigned *copy_ifResult =
-          thrust::copy_if(thrust::device, currValues, currValues + currNumValues,
-                          tempValues, belongsToPivotBin(position, pivot));
-      unsigned binCount = copy_ifResult - tempValues;
-
-      // in next iteration make `currNumValues` the number of elements in the
-      // pivot bin and subtract from `currK` the number of elements in lesser
-      // bins.
-      currNumValues = binCount;
-      if (pivot > 0) {
-        cudaMemcpy(toSubtract, &prefixSums[pivot - 1], sizeof(unsigned),
-                  cudaMemcpyDeviceToHost);
-        currK -= *toSubtract;
-      }
-
-      // update `currValues` pointer and cycle between temporary arrays
-      if (currValues == values || currValues == tempValues2) {
-        currValues = tempValues1;
-        tempValues = tempValues2;
-      } else if (currValues == tempValues1) {
-        currValues = tempValues2;
-        tempValues = tempValues1;
-      }
+    // in next iteration make `currNumValues` the number of elements in the
+    // pivot bin and subtract from `currK` the number of elements in lesser
+    // bins.
+    currNumValues = binCount;
+    if (pivot > 0) {
+      cudaMemcpy(toSubtract, &prefixSums[pivot - 1], sizeof(unsigned),
+                cudaMemcpyDeviceToHost);
+      currK -= *toSubtract;
     }
+
+    // update `currValues` pointer and cycle between temporary arrays
+    if (currValues == values || currValues == tempValues2) {
+      currValues = tempValues1;
+      tempValues = tempValues2;
+    } else if (currValues == tempValues1) {
+      currValues = tempValues2;
+      tempValues = tempValues1;
+    }
+  
   }
   
   // reuse `tempValues1` to copy keys whose values are strictly less than
@@ -186,17 +175,14 @@ void radix_select(unsigned *values, unsigned *keys, int numValues, int k,
       valueBelowThreshold(values, kthSmallestValue));
   unsigned countLessThan = copy_ifResult - tempValues1;
 
-  // copy keys whose values are equal to `kthSmallestValue` into the remaining
-  // space in `tempValues1`.
-  thrust::copy_if(
-        thrust::device, keys, keys + numValues, values, tempValues1 + countLessThan,
-        valueEqualToThreshold(values, kthSmallestValue));
-
   // reuse `tempValues2` to copy all values strictly less than
   // `kthSmallestValue`
   thrust::copy_if(thrust::device, values, values + numValues, tempValues2,
                   valueBelowThreshold(values, kthSmallestValue));
   
+  // get keys of values equal to kthSmallestValue TODO
+
+
   // append onto values just copied into `tempValues1` values equal to
   // `kthSmallestValue` such that we have accounted for `k` total values
   thrust::fill(thrust::device, tempValues2 + countLessThan, tempValues2 + k,

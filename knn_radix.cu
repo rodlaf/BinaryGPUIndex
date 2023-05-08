@@ -38,10 +38,10 @@ __host__ void printBits(uint64_cu *x) {
 }
 
 // TODO: Pass distances space
-void kNearestNeighbors(uint64_cu *vectors, int *keys, uint64_cu *query,
-                       int numVectors, int k, uint32_cu *kNearestDistances,
-                       uint64_cu *kNearestVectors, int *kNearestKeys,
-                       uint32_cu *distances) {
+void kNearestNeighbors(uint64_cu *vectors, unsigned *keys, uint64_cu *query,
+                       int numVectors, int k, unsigned *kNearestDistances,
+                       uint64_cu *kNearestVectors, unsigned *kNearestKeys,
+                       unsigned *distances) {
   int blockSize = 256;
   int numBlocks = (numVectors + blockSize - 1) / blockSize;
 
@@ -64,7 +64,7 @@ void kNearestNeighbors(uint64_cu *vectors, int *keys, uint64_cu *query,
 
 int main(void) {
   int numIndexes = 950000000;
-  int k = 10;
+  int k = 1000;
 
   int blockSize = 256;
   int numBlocks = (numIndexes + blockSize - 1) / blockSize;
@@ -79,8 +79,8 @@ int main(void) {
   kNearestIndexes = (uint64_cu *)malloc(k * sizeof(uint64_cu));
 
   // allocate space to receive k nearest keys on host
-  int *kNearestKeys;
-  kNearestKeys = (int *)malloc(k * sizeof(int));
+  unsigned *kNearestKeys;
+  kNearestKeys = (unsigned *)malloc(k * sizeof(unsigned));
   // allocate space on device for query and indexes
   uint64_cu *query, *indexes;
   cudaMalloc(&query, sizeof(uint64_cu));
@@ -90,8 +90,8 @@ int main(void) {
   cudaMalloc(&distances, numIndexes * sizeof(unsigned int));
 
   // allocate and initalize keys on device
-  int *keys;
-  cudaMalloc(&keys, numIndexes * sizeof(int));
+  unsigned *keys;
+  cudaMalloc(&keys, numIndexes * sizeof(unsigned));
   thrust::sequence(thrust::device, keys, keys + numIndexes);
 
   // generate random indexes on device
