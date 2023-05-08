@@ -43,18 +43,26 @@ int main(void) {
   int blockSize = 256;
   int numBlocks = (numIndexes + blockSize - 1) / blockSize;
 
-  // allocate space on host for query, k nearest distances, and k nearest
-  // indexes
+  // allocate space on host for query, and k nearest indexes
   uint64_cu *hostQuery;
-  float *kNearestDistances;
-  uint64_cu *kNearestIndexes;
   hostQuery = (uint64_cu *)malloc(sizeof(uint64_cu));
-  kNearestDistances = (float *)malloc(k * sizeof(float));
-  kNearestIndexes = (uint64_cu *)malloc(k * sizeof(uint64_cu));
 
-  // allocate space to receive k nearest keys on host
+  // allocate k nearest distances, keys, and indexes on device
+  float *kNearestDistances;
   unsigned *kNearestKeys;
-  kNearestKeys = (unsigned *)malloc(k * sizeof(unsigned));
+  uint64_cu *kNearestIndexes;
+  cudaMalloc(&kNearestDistances, k * sizeof(unsigned));
+  cudaMalloc(&kNearestKeys, k * sizeof(unsigned));
+  cudaMalloc(&kNearestIndexes, k * sizeof(uint64_cu));
+
+  // allocate host versions of kNearestDistances, kNearestKeys, and 
+  // kNearestIndexes
+  float *hostKNearestDistances;
+  unsigned *hostKNearestKeys;
+  uint64_cu *hostKNearestIndexes;
+  hostKNearestDistances = (float *)malloc(k * sizeof(float));
+  hostKNearestKeys = (unsigned *)malloc(k * sizeof(unsigned));
+  hostKNearestIndexes = (uint64_cu *)malloc(k * sizeof(uint64_cu));
 
   // allocate space on device for query and indexes
   uint64_cu *query, *indexes;
@@ -99,27 +107,33 @@ int main(void) {
 
   printf("Execution time:  %.3f ms \n", time);
 
+  // copy results from device to host
+  cudaMemcpy(hostKNearestDistances, kNearestDistances, k * sizeof(float), cudaMemcpyDeviceToHost);
+  cudaMemcpy(hostKNearestKeys, kNearestKeys, k * sizeof(unsigned), cudaMemcpyDeviceToHost);
+
   // print results
   printf("Query: ");
   printBits(hostQuery);
   for (int i = 0; i < k; ++i) {
-    printf("%d: %f ", i, kNearestDistances[i]);
-    printBits(&kNearestIndexes[i]);
+    printf("%d: %f ", i, hostKNearestDistances[i]);
+    // printBits(&kNearestIndexes[i]);
   }
 
   // free device memory
   cudaFree(query);
   cudaFree(indexes);
   cudaFree(keys);
+  cudaFree(kNearestDistances);
+  cudaFree(kNearestKeys);
+  cudaFree(kNearestIndexes);
   cudaFree(workingMem1);
   cudaFree(workingMem2);
   cudaFree(workingMem3);
 
   // free host memory
   free(hostQuery);
-  free(kNearestDistances);
-  free(kNearestIndexes);
-  free(kNearestKeys);
+  free(hostKNearestDistances);
+  free(hostKNearestKeys);
 
   return 0;
 }

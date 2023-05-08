@@ -1,6 +1,8 @@
 # Cuda Accelerated Vector kNN
 
-kNN implementation supports only 64-bit binary vectors but can be extended to support any vector type. Such an extension would not require any alteration to the existing radix select implementation. 
+A simple vector database that supports insertion and K Nearest Neighbors search. The only supported vector is a 64-bit binary vector, for simplicity of implementation and usage of space.
+
+While this implementation can only support 64-bit binary vector, it can be extended to support any vector type, including vectors of non-binary elements such as floating point values. Such an extension would not require any alteration to the existing radix select implementation, only to the computation of distances.
 
 ## VectorDB
 
