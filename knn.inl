@@ -3,6 +3,8 @@
 #include <math.h>
 #include <sys/time.h>
 
+#include "radix_select.h"
+
 typedef unsigned long long int uint64_cu;
 
 // TEMPORARILY MODIFIED to return an unsigned integer
@@ -23,4 +25,45 @@ __global__ void computeDistances(int numIndexes, uint64_cu *query,
 
   for (int i = idx; i < numIndexes; i += stride)
     cosineDistance(query, &indexes[i], &distances[i]);
+}
+
+__global__ void floatToUnsigned(float *values, int numValues) {
+  int idx = blockIdx.x * blockDim.x + threadIdx.x;
+  int stride = blockDim.x * gridDim.x;
+
+  for (int i = idx; i < numValues; i += stride)
+    values[i] = (unsigned)(values[i] * UINT_MAX);
+}
+
+void kNearestNeighbors(uint64_cu *vectors, unsigned *keys, uint64_cu *query,
+                       int numVectors, int k, float *kNearestDistances,
+                       uint64_cu *kNearestVectors, unsigned *kNearestKeys,
+                       unsigned *distances, unsigned *workingMem1,
+                       unsigned *workingMem2) {
+  int blockSize = 1024;
+  int numBlocks = (numVectors + blockSize - 1) / blockSize;
+
+  unsigned *uintKNearestDistances;
+  uintKNearestDistances = (unsigned *)malloc(k * sizeof(unsigned));
+
+  // Compute distances
+  computeDistances<<<numBlocks, blockSize>>>(numVectors, query, vectors,
+                                             distances);
+  cudaDeviceSynchronize();
+
+  // Select smallest `k` distances
+  radix_select(distances, keys, numVectors, k, uintKNearestDistances, kNearestKeys,
+               workingMem1, workingMem2);
+
+  for (int i = 0; i < k; ++i) {
+    kNearestDistances[i] = (float)uintKNearestDistances[i] / (float)UINT_MAX;
+
+    // copy indicated indexes from device to host
+    // TODO: should use a kernel for this
+    int idx = kNearestKeys[i];
+    cudaMemcpy(&kNearestVectors[i], &vectors[idx], sizeof(uint64_cu),
+               cudaMemcpyDeviceToHost);
+  }
+
+  free(uintKNearestDistances);
 }

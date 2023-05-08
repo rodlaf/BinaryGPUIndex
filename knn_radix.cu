@@ -11,7 +11,6 @@
 #include <thrust/reduce.h>
 
 #include "knn.inl"
-#include "radix_select.h"
 
 // murmur64 hash function
 __device__ uint64_cu hash(uint64_cu h) {
@@ -37,35 +36,9 @@ __host__ void printBits(uint64_cu *x) {
   std::cout << b << std::endl;
 }
 
-void kNearestNeighbors(uint64_cu *vectors, unsigned *keys, uint64_cu *query,
-                       int numVectors, int k, unsigned *kNearestDistances,
-                       uint64_cu *kNearestVectors, unsigned *kNearestKeys,
-                       unsigned *distances, unsigned *workingMem1,
-                       unsigned *workingMem2) {
-  int blockSize = 256;
-  int numBlocks = (numVectors + blockSize - 1) / blockSize;
-
-  // Compute distances
-  computeDistances<<<numBlocks, blockSize>>>(numVectors, query, vectors,
-                                             distances);
-  cudaDeviceSynchronize();
-
-  // Select smallest `k` distances
-  radix_select(distances, keys, numVectors, k, kNearestDistances, kNearestKeys,
-               workingMem1, workingMem2);
-
-  // copy indicated indexes from device to host
-  // TODO: should use a kernel for this
-  for (int i = 0; i < k; ++i) {
-    int idx = kNearestKeys[i];
-    cudaMemcpy(&kNearestVectors[i], &vectors[idx], sizeof(uint64_cu),
-               cudaMemcpyDeviceToHost);
-  }
-}
-
 int main(void) {
   int numIndexes = 950000000;
-  int k = 1000;
+  int k = 10;
 
   int blockSize = 256;
   int numBlocks = (numIndexes + blockSize - 1) / blockSize;
@@ -73,10 +46,10 @@ int main(void) {
   // allocate space on host for query, k nearest distances, and k nearest
   // indexes
   uint64_cu *hostQuery;
-  unsigned int *kNearestDistances;
+  float *kNearestDistances;
   uint64_cu *kNearestIndexes;
   hostQuery = (uint64_cu *)malloc(sizeof(uint64_cu));
-  kNearestDistances = (unsigned int *)malloc(k * sizeof(unsigned int));
+  kNearestDistances = (float *)malloc(k * sizeof(float));
   kNearestIndexes = (uint64_cu *)malloc(k * sizeof(uint64_cu));
 
   // allocate space to receive k nearest keys on host
@@ -88,8 +61,8 @@ int main(void) {
   cudaMalloc(&query, sizeof(uint64_cu));
   cudaMalloc(&indexes, numIndexes * sizeof(uint64_cu));
 
-  unsigned int *distances;
-  cudaMalloc(&distances, numIndexes * sizeof(unsigned int));
+  unsigned *distances;
+  cudaMalloc(&distances, numIndexes * sizeof(unsigned));
 
   // allocate and initalize keys on device
   unsigned *keys;
@@ -132,7 +105,7 @@ int main(void) {
   printf("Query: ");
   printBits(hostQuery);
   for (int i = 0; i < k; ++i) {
-    printf("%d: %u ", i, kNearestDistances[i]);
+    printf("%d: %f ", i, kNearestDistances[i]);
     printBits(&kNearestIndexes[i]);
   }
 
