@@ -14,7 +14,10 @@ __device__ void cosineDistance(uint64_cu *a, uint64_cu *b, unsigned *dest) {
   float a_dot_a = (float)__popcll(*a);
   float b_dot_b = (float)__popcll(*b);
 
-  *dest = (unsigned)((1 - (a_dot_b / (sqrt(a_dot_a) * sqrt(b_dot_b)))) * UINT32_MAX);
+  // returns cosine distance as an unsigned integer. this will get turned into
+  // a float once the k smallest are selected further on.
+  *dest = (unsigned)((1 - (a_dot_b / (sqrt(a_dot_a) * sqrt(b_dot_b)))) *
+                     UINT32_MAX);
 }
 
 __global__ void computeDistances(int numIndexes, uint64_cu *query,
@@ -29,13 +32,15 @@ __global__ void computeDistances(int numIndexes, uint64_cu *query,
 void kNearestNeighbors(uint64_cu *vectors, unsigned *keys, uint64_cu *query,
                        int numVectors, int k, float *kNearestDistances,
                        uint64_cu *kNearestVectors, unsigned *kNearestKeys,
-                       unsigned *distances, unsigned *workingMem1,
-                       unsigned *workingMem2) {
+                       unsigned *workingMem1, unsigned *workingMem2,
+                       unsigned *workingMem3) {
   int blockSize = 1024;
   int numBlocks = (numVectors + blockSize - 1) / blockSize;
 
   unsigned *uintKNearestDistances;
   uintKNearestDistances = (unsigned *)malloc(k * sizeof(unsigned));
+
+  unsigned *distances = workingMem3;
 
   // compute distances
   computeDistances<<<numBlocks, blockSize>>>(numVectors, query, vectors,
@@ -43,8 +48,8 @@ void kNearestNeighbors(uint64_cu *vectors, unsigned *keys, uint64_cu *query,
   cudaDeviceSynchronize();
 
   // select smallest `k` distances
-  radixSelect(distances, keys, numVectors, k, uintKNearestDistances, kNearestKeys,
-               workingMem1, workingMem2);
+  radixSelect(distances, keys, numVectors, k, uintKNearestDistances,
+              kNearestKeys, workingMem1, workingMem2);
 
   for (int i = 0; i < k; ++i) {
     // convert unsigned integer distances to floating point distances

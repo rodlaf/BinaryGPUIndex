@@ -10,7 +10,7 @@
 #include <thrust/random.h>
 #include <thrust/reduce.h>
 
-#include "knn.inl"
+#include "knn.h"
 
 // murmur64 hash function
 __device__ uint64_cu hash(uint64_cu h) {
@@ -61,18 +61,16 @@ int main(void) {
   cudaMalloc(&query, sizeof(uint64_cu));
   cudaMalloc(&indexes, numIndexes * sizeof(uint64_cu));
 
-  unsigned *distances;
-  cudaMalloc(&distances, numIndexes * sizeof(unsigned));
-
   // allocate and initalize keys on device
   unsigned *keys;
   cudaMalloc(&keys, numIndexes * sizeof(unsigned));
   thrust::sequence(thrust::device, keys, keys + numIndexes);
 
   // allocate working memory
-  unsigned *workingMem1, *workingMem2;
+  unsigned *workingMem1, *workingMem2, *workingMem3;
   cudaMalloc(&workingMem1, numIndexes * sizeof(unsigned));
   cudaMalloc(&workingMem2, numIndexes * sizeof(unsigned));
+  cudaMalloc(&workingMem3, numIndexes * sizeof(unsigned));
 
   // generate random indexes on device
   randf<<<numBlocks, blockSize>>>(indexes, numIndexes);
@@ -92,8 +90,8 @@ int main(void) {
   cudaEventRecord(start, 0);
 
   kNearestNeighbors(indexes, keys, query, numIndexes, k, kNearestDistances,
-                    kNearestIndexes, kNearestKeys, distances, workingMem1,
-                    workingMem2);
+                    kNearestIndexes, kNearestKeys, workingMem1, workingMem2,
+                    workingMem3);
 
   cudaEventRecord(stop, 0);
   cudaEventSynchronize(stop);
@@ -112,10 +110,10 @@ int main(void) {
   // free device memory
   cudaFree(query);
   cudaFree(indexes);
-  cudaFree(distances);
   cudaFree(keys);
   cudaFree(workingMem1);
   cudaFree(workingMem2);
+  cudaFree(workingMem3);
 
   // free host memory
   free(hostQuery);
