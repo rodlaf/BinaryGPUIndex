@@ -26,7 +26,7 @@ __global__ void randf(uint64_cu *p, int n) {
   int idx = threadIdx.x + blockIdx.x * blockDim.x;
   while (idx < n) {
     // hash address
-    p[idx] = hash((uint64_cu)&p[idx]);
+    p[idx] = hash((uint64_cu)~idx);
     idx += blockDim.x * gridDim.x;
   }
 }
@@ -38,7 +38,7 @@ __host__ void printBits(uint64_cu *x) {
 
 int main(void) {
   int numIndexes = 970000000;
-  int k = 10;
+  int k = 1000;
 
   int blockSize = 256;
   int numBlocks = (numIndexes + blockSize - 1) / blockSize;
@@ -110,13 +110,13 @@ int main(void) {
   // copy results from device to host
   cudaMemcpy(hostKNearestDistances, kNearestDistances, k * sizeof(float), cudaMemcpyDeviceToHost);
   cudaMemcpy(hostKNearestKeys, kNearestKeys, k * sizeof(unsigned), cudaMemcpyDeviceToHost);
-
+  cudaMemcpy(hostKNearestIndexes, kNearestIndexes, k * sizeof(uint64_cu), cudaMemcpyDeviceToHost);
   // print results
   printf("Query: ");
   printBits(hostQuery);
   for (int i = 0; i < k; ++i) {
     printf("%d: %f ", i, hostKNearestDistances[i]);
-    // printBits(&kNearestIndexes[i]);
+    printBits(&hostKNearestIndexes[i]);
   }
 
   // free device memory

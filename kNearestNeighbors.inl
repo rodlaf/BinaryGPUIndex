@@ -39,8 +39,12 @@ __global__ void unsignedToFloat(unsigned *uintValues, float *fValues,
 }
 
 __global__ void retrieveVectorsFromKeys(uint64_cu *vectors, unsigned *keys,
-                                        int k, uint64_cu *retrieved) {
+                                        int numKeys, uint64_cu *retrieved) {
+  int idx = blockIdx.x * blockDim.x + threadIdx.x;
+  int stride = blockDim.x * gridDim.x;
 
+  for (int i = idx; i < numKeys; i += stride)
+    retrieved[i] = vectors[keys[i]];
 }
 
 void kNearestNeighbors(uint64_cu *vectors, unsigned *keys, uint64_cu *query,
@@ -70,6 +74,9 @@ void kNearestNeighbors(uint64_cu *vectors, unsigned *keys, uint64_cu *query,
   // convert unsigned integer distances to floating point distances
   unsignedToFloat<<<1, blockSize>>>(uintKNearestDistances, kNearestDistances,
                                     k);
+  cudaDeviceSynchronize();
+
+  retrieveVectorsFromKeys<<<1, blockSize>>>(vectors, kNearestKeys, k, kNearestVectors);
   cudaDeviceSynchronize();
 
   // for (int i = 0; i < k; ++i) {
