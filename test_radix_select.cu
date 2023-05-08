@@ -43,6 +43,11 @@ int main() {
   unsigned *kSmallestKeys = (unsigned *)malloc(k * sizeof(unsigned));
   unsigned *kSmallestValues = (unsigned *)malloc(k * sizeof(unsigned));
 
+  unsigned *tempValues1, *tempValues2;
+  cudaMalloc(&tempValues1, n * sizeof(unsigned));
+  cudaMalloc(&tempValues2, n * sizeof(unsigned));
+
+
   // run radix select
   float time;
   cudaEvent_t start, stop;
@@ -51,7 +56,7 @@ int main() {
   cudaEventCreate(&stop);
   cudaEventRecord(start, 0);
 
-  radix_select(xs, keys, n, k, kSmallestValues, kSmallestKeys);
+  radix_select(xs, keys, n, k, kSmallestValues, kSmallestKeys, tempValues1, tempValues2);
 
   cudaEventRecord(stop, 0);
   cudaEventSynchronize(stop);
@@ -81,6 +86,8 @@ int main() {
 
   cudaFree(xs);
   cudaFree(keys);
+  cudaFree(tempValues1);
+  cudaFree(tempValues2);
 
   free(kSmallestKeys);
 
