@@ -22,7 +22,7 @@ __global__ void rand(int n, unsigned *xs) {
 }
 
 int main() {
-  int n = 1 << 30;
+  int n = 1 << 20;
   int k = 10;
 
   int blockSize = 512;

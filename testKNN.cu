@@ -66,7 +66,7 @@ int main(void) {
   cudaMalloc(&keys, numIndexes * sizeof(unsigned));
   thrust::sequence(thrust::device, keys, keys + numIndexes);
 
-  // allocate working memory
+  // allocate working memory on device
   unsigned *workingMem1, *workingMem2, *workingMem3;
   cudaMalloc(&workingMem1, numIndexes * sizeof(unsigned));
   cudaMalloc(&workingMem2, numIndexes * sizeof(unsigned));

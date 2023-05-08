@@ -6,7 +6,7 @@
   working memory of type unsigned integer and of size 
   (numValues * sizeof(unsigned)).
 
-  All memory must be on device.
+  All memory that is passed must be located on device.
 */
 void radixSelect(unsigned *values, unsigned *keys, int numValues, int k,
                   unsigned *kSmallestValues, unsigned *kSmallestKeys, 
