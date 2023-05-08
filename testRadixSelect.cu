@@ -2,7 +2,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 
-#include "radix_select.h"
+#include "radixSelect.h"
 
 __device__ unsigned hash(unsigned a) {
   a = (a ^ 61) ^ (a >> 16);
@@ -47,7 +47,6 @@ int main() {
   cudaMalloc(&tempValues1, n * sizeof(unsigned));
   cudaMalloc(&tempValues2, n * sizeof(unsigned));
 
-
   // run radix select
   float time;
   cudaEvent_t start, stop;
@@ -56,7 +55,7 @@ int main() {
   cudaEventCreate(&stop);
   cudaEventRecord(start, 0);
 
-  radix_select(xs, keys, n, k, kSmallestValues, kSmallestKeys, tempValues1, tempValues2);
+  radixSelect(xs, keys, n, k, kSmallestValues, kSmallestKeys, tempValues1, tempValues2);
 
   cudaEventRecord(stop, 0);
   cudaEventSynchronize(stop);

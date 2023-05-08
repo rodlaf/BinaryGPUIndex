@@ -10,7 +10,7 @@
 #include <thrust/random.h>
 #include <thrust/reduce.h>
 
-#include "knn.h"
+#include "kNearestNeighbors.h"
 
 // murmur64 hash function
 __device__ uint64_cu hash(uint64_cu h) {

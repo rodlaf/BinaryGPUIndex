@@ -14,4 +14,4 @@ void kNearestNeighbors(uint64_cu *vectors, unsigned *keys, uint64_cu *query,
                        unsigned *workingMem1, unsigned *workingMem2,
                        unsigned *workingMem3);
 
-#include "knn.inl"
+#include "kNearestNeighbors.inl"
