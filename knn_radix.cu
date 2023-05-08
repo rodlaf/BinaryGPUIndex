@@ -37,7 +37,7 @@ __host__ void printBits(uint64_cu *x) {
 }
 
 int main(void) {
-  int numIndexes = 950000000;
+  int numIndexes = 970000000;
   int k = 10;
 
   int blockSize = 256;

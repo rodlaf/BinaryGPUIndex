@@ -17,21 +17,8 @@ __device__ unsigned positionBits(unsigned value, int position) {
   return (value >> ((sizeof(unsigned) - position) * 8)) & 0xff;
 }
 
-__global__ void collectHistogram(int numValues, unsigned *values,
-                                 unsigned *histogram, int position) {
-  int idx = blockIdx.x * blockDim.x + threadIdx.x;
-  int stride = blockDim.x * gridDim.x;
-
-  for (int i = idx; i < numValues; i += stride) {
-    unsigned bin = positionBits(values[i], position);
-    atomicAdd(&histogram[bin], 1);
-  }
-}
-
 /*
-  This histogram collector uses shared memory. This is a performance improvement
-  only for when numValues is very large (e.g., this is only used in the first
-  iteration).
+  Collect histogram.
 */
 __global__ void collectHistogramSharedMem(int numValues, unsigned *values,
                                           unsigned *histogram, int position) {
@@ -95,9 +82,6 @@ struct valueEqualToThreshold {
 void radix_select(unsigned *values, unsigned *keys, int numValues, int k,
                   unsigned *kSmallestValues, unsigned *kSmallestKeys,
                   unsigned *workingMem1, unsigned *workingMem2) {
-  int blockSize = 1024;
-  int numBlocks = (numValues + blockSize - 1) / blockSize;
-
   // allocate histogram, prefix sum, and temporary arrays
   unsigned *histogram, *prefixSums;
 
@@ -118,16 +102,13 @@ void radix_select(unsigned *values, unsigned *keys, int numValues, int k,
   // iterate over four 8-bit chunks in a 32-bit integer to find kth smallest
   // value
   for (int position = 1; position <= 4; ++position) {
-    // Collect histogram. This is the most expensive part of the algorithm
-    // and accounts for 90%+ of the duration. For this reason, we are putting
-    // in the effort to make two implementations--one that uses shared memory
-    // and one that doesn't--for different iterations.
+    int blockSize = 1024;
+    int numBlocks = (currNumValues + blockSize - 1) / blockSize;
+
+    // Collect histogram
     cudaMemset(histogram, 0, 256 * sizeof(unsigned));
-    if (position == 1) // TODO: Change to `numValues`-based threshold
-      collectHistogramSharedMem<<<numBlocks, blockSize>>>(
-          currNumValues, currValues, histogram, position);
-    else
-      collectHistogram<<<numBlocks, blockSize>>>(currNumValues, currValues,
+
+    collectHistogramSharedMem<<<numBlocks, blockSize>>>(currNumValues, currValues,
                                                  histogram, position);
     cudaDeviceSynchronize();
 
