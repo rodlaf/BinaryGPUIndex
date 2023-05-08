@@ -39,13 +39,21 @@ int main() {
   cudaMalloc(&keys, n * sizeof(unsigned));
   thrust::sequence(thrust::device, keys, keys + n);
 
-  // allocate kSmallestKeys and kSmallestValues on host
-  unsigned *kSmallestKeys = (unsigned *)malloc(k * sizeof(unsigned));
-  unsigned *kSmallestValues = (unsigned *)malloc(k * sizeof(unsigned));
+  // allocate kSmallestKeys and kSmallestValues on device
+  unsigned *kSmallestKeys;
+  unsigned *kSmallestValues;
+  cudaMalloc(&kSmallestKeys, k * sizeof(unsigned));
+  cudaMalloc(&kSmallestValues, k * sizeof(unsigned));
 
   unsigned *tempValues1, *tempValues2;
   cudaMalloc(&tempValues1, n * sizeof(unsigned));
   cudaMalloc(&tempValues2, n * sizeof(unsigned));
+
+  // allocate hostKSmallestKeys and hostKSmallestValues on host
+  unsigned *hostKSmallestKeys;
+  unsigned *hostKSmallestValues;
+  hostKSmallestKeys = (unsigned *)malloc(k * sizeof(unsigned));
+  hostKSmallestValues = (unsigned *)malloc(k * sizeof(unsigned));
 
   // run radix select
   float time;
@@ -63,11 +71,15 @@ int main() {
 
   printf("Execution time:  %.3f ms \n", time);
 
+  // copy solution from device to host
+  cudaMemcpy(hostKSmallestKeys, kSmallestKeys, k * sizeof(unsigned), cudaMemcpyDeviceToHost);
+  cudaMemcpy(hostKSmallestValues, kSmallestValues, k * sizeof(unsigned), cudaMemcpyDeviceToHost);
+
   for (int i = 0; i < k; ++i) {
-    printf("kSmallestKeys: %d: %u\n", i, kSmallestKeys[i]);
+    printf("kSmallestKeys: %d: %u\n", i, hostKSmallestKeys[i]);
   }
   for (int i = 0; i < k; ++i) {
-    printf("kSmallestValues: %d: %u\n", i, kSmallestValues[i]);
+    printf("kSmallestValues: %d: %u\n", i, hostKSmallestValues[i]);
   }
 
   // // run thrust sort
@@ -87,8 +99,11 @@ int main() {
   cudaFree(keys);
   cudaFree(tempValues1);
   cudaFree(tempValues2);
+  cudaFree(kSmallestKeys);
+  cudaFree(kSmallestValues);
 
-  free(kSmallestKeys);
+  free(hostKSmallestKeys);
+  free(hostKSmallestValues);
 
   return 0;
 }
