@@ -32,7 +32,6 @@ __global__ void collectHistogram(int numValues, unsigned *values,
   This histogram collector uses shared memory. This is a performance improvement
   only for when numValues is very large (e.g., this is only used in the first
   iteration).
-  TODO: combine two versions using block/thread arithmetic
 */
 __global__ void collectHistogramSharedMem(int numValues, unsigned *values,
                                           unsigned *histogram, int position) {

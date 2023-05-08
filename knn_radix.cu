@@ -37,11 +37,11 @@ __host__ void printBits(uint64_cu *x) {
   std::cout << b << std::endl;
 }
 
-// TODO: Pass distances space
 void kNearestNeighbors(uint64_cu *vectors, unsigned *keys, uint64_cu *query,
                        int numVectors, int k, unsigned *kNearestDistances,
                        uint64_cu *kNearestVectors, unsigned *kNearestKeys,
-                       unsigned *distances) {
+                       unsigned *distances, unsigned *workingMem1,
+                       unsigned *workingMem2) {
   int blockSize = 256;
   int numBlocks = (numVectors + blockSize - 1) / blockSize;
 
@@ -51,7 +51,8 @@ void kNearestNeighbors(uint64_cu *vectors, unsigned *keys, uint64_cu *query,
   cudaDeviceSynchronize();
 
   // Select smallest `k` distances
-  radix_select(distances, keys, numVectors, k, kNearestDistances, kNearestKeys);
+  radix_select(distances, keys, numVectors, k, kNearestDistances, kNearestKeys,
+               workingMem1, workingMem2);
 
   // copy indicated indexes from device to host
   // TODO: should use a kernel for this
@@ -81,6 +82,7 @@ int main(void) {
   // allocate space to receive k nearest keys on host
   unsigned *kNearestKeys;
   kNearestKeys = (unsigned *)malloc(k * sizeof(unsigned));
+
   // allocate space on device for query and indexes
   uint64_cu *query, *indexes;
   cudaMalloc(&query, sizeof(uint64_cu));
@@ -93,6 +95,11 @@ int main(void) {
   unsigned *keys;
   cudaMalloc(&keys, numIndexes * sizeof(unsigned));
   thrust::sequence(thrust::device, keys, keys + numIndexes);
+
+  // allocate working memory
+  unsigned *workingMem1, *workingMem2;
+  cudaMalloc(&workingMem1, numIndexes * sizeof(unsigned));
+  cudaMalloc(&workingMem2, numIndexes * sizeof(unsigned));
 
   // generate random indexes on device
   randf<<<numBlocks, blockSize>>>(indexes, numIndexes);
@@ -112,7 +119,8 @@ int main(void) {
   cudaEventRecord(start, 0);
 
   kNearestNeighbors(indexes, keys, query, numIndexes, k, kNearestDistances,
-                    kNearestIndexes, kNearestKeys, distances);
+                    kNearestIndexes, kNearestKeys, distances, workingMem1,
+                    workingMem2);
 
   cudaEventRecord(stop, 0);
   cudaEventSynchronize(stop);
@@ -133,6 +141,8 @@ int main(void) {
   cudaFree(indexes);
   cudaFree(distances);
   cudaFree(keys);
+  cudaFree(workingMem1);
+  cudaFree(workingMem2);
 
   // free host memory
   free(hostQuery);
