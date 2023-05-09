@@ -38,9 +38,9 @@ __host__ void printBits(uint64_cu *x) {
 
 int main(void) {
   int numIndexes = 970000000;
-  int k = 1000;
+  int k = 10;
 
-  int blockSize = 256;
+  int blockSize = 1024;
   int numBlocks = (numIndexes + blockSize - 1) / blockSize;
 
   // allocate space on host for query, and k nearest indexes
@@ -55,7 +55,7 @@ int main(void) {
   cudaMalloc(&kNearestKeys, k * sizeof(unsigned));
   cudaMalloc(&kNearestIndexes, k * sizeof(uint64_cu));
 
-  // allocate host versions of kNearestDistances, kNearestKeys, and 
+  // allocate host versions of kNearestDistances, kNearestKeys, and
   // kNearestIndexes
   float *hostKNearestDistances;
   unsigned *hostKNearestKeys;
@@ -108,9 +108,13 @@ int main(void) {
   printf("Execution time:  %.3f ms \n", time);
 
   // copy results from device to host
-  cudaMemcpy(hostKNearestDistances, kNearestDistances, k * sizeof(float), cudaMemcpyDeviceToHost);
-  cudaMemcpy(hostKNearestKeys, kNearestKeys, k * sizeof(unsigned), cudaMemcpyDeviceToHost);
-  cudaMemcpy(hostKNearestIndexes, kNearestIndexes, k * sizeof(uint64_cu), cudaMemcpyDeviceToHost);
+  cudaMemcpy(hostKNearestDistances, kNearestDistances, k * sizeof(float),
+             cudaMemcpyDeviceToHost);
+  cudaMemcpy(hostKNearestKeys, kNearestKeys, k * sizeof(unsigned),
+             cudaMemcpyDeviceToHost);
+  cudaMemcpy(hostKNearestIndexes, kNearestIndexes, k * sizeof(uint64_cu),
+             cudaMemcpyDeviceToHost);
+
   // print results
   printf("Query: ");
   printBits(hostQuery);

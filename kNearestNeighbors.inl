@@ -7,26 +7,38 @@
 
 typedef unsigned long long int uint64_cu;
 
-__device__ void cosineDistance(uint64_cu *a, uint64_cu *b, unsigned *dest) {
+/*
+  We can shave off ~20ms of each call by performing the float to unsigned 
+  conversion directly in this function. We don't do this to show that the
+  algorithm is completely agnositc to the distance metric used, whether 
+  it returns a floating point value or an integer.
+*/
+__device__ void cosineDistance(uint64_cu *a, uint64_cu *b, float *dest) {
   // __popcll computes the Hamming Weight of an integer (e.g., number of bits
   // that are 1)
   float a_dot_b = (float)__popcll(*a & *b);
   float a_dot_a = (float)__popcll(*a);
   float b_dot_b = (float)__popcll(*b);
 
-  // returns cosine distance as an unsigned integer. this will get turned into
-  // a float once the k smallest are selected further on.
-  *dest = (unsigned)((1 - (a_dot_b / (sqrt(a_dot_a) * sqrt(b_dot_b)))) *
-                     UINT32_MAX);
+  *dest = (1 - (a_dot_b / (sqrt(a_dot_a) * sqrt(b_dot_b))));
 }
 
 __global__ void computeDistances(int numIndexes, uint64_cu *query,
-                                 uint64_cu *indexes, unsigned *distances) {
+                                 uint64_cu *indexes, float *distances) {
   int idx = blockIdx.x * blockDim.x + threadIdx.x;
   int stride = blockDim.x * gridDim.x;
 
   for (int i = idx; i < numIndexes; i += stride)
     cosineDistance(query, &indexes[i], &distances[i]);
+}
+
+__global__ void floatToUnsigned(float *fValues, unsigned *uintValues, 
+                                int numValues) {
+  int idx = blockIdx.x * blockDim.x + threadIdx.x;
+  int stride = blockDim.x * gridDim.x;
+
+  for (int i = idx; i < numValues; i += stride)
+    uintValues[i] = (unsigned)(fValues[i] * UINT_MAX);
 }
 
 __global__ void unsignedToFloat(unsigned *uintValues, float *fValues,
@@ -55,39 +67,36 @@ void kNearestNeighbors(uint64_cu *vectors, unsigned *keys, uint64_cu *query,
   int blockSize = 1024;
   int numBlocks = (numVectors + blockSize - 1) / blockSize;
 
-  // we first collect the best distances in their unsigned integer versions
+  // use working memory to compute distances
+  float *distances = (float *)workingMem1;
+  unsigned *uintDistances = workingMem2;
+
+  // collect the best distances in their unsigned integer versions
   unsigned *uintKNearestDistances;
   cudaMalloc(&uintKNearestDistances, k * sizeof(unsigned));
-
-  // use working memory to compute distances
-  unsigned *distances = workingMem3;
 
   // compute distances
   computeDistances<<<numBlocks, blockSize>>>(numVectors, query, vectors,
                                              distances);
   cudaDeviceSynchronize();
 
-  // select smallest `k` distances
-  radixSelect(distances, keys, numVectors, k, uintKNearestDistances,
-              kNearestKeys, workingMem1, workingMem2);
+  // convert distances to unsigned integers
+  floatToUnsigned<<<numBlocks, blockSize>>>(distances, uintDistances, numVectors);
+  cudaDeviceSynchronize();
 
-  // convert unsigned integer distances to floating point distances
+  // select smallest `k` distances
+  radixSelect(uintDistances, keys, numVectors, k, uintKNearestDistances,
+              kNearestKeys, workingMem1, workingMem3);
+
+  // convert unsigned integer distances back to floating point distances
   unsignedToFloat<<<1, blockSize>>>(uintKNearestDistances, kNearestDistances,
                                     k);
   cudaDeviceSynchronize();
 
-  retrieveVectorsFromKeys<<<1, blockSize>>>(vectors, kNearestKeys, k, kNearestVectors);
+  // retrieve vectors from relevant keys
+  retrieveVectorsFromKeys<<<1, blockSize>>>(vectors, kNearestKeys, k,
+                                            kNearestVectors);
   cudaDeviceSynchronize();
-
-  // for (int i = 0; i < k; ++i) {
-  //   // convert unsigned integer distances to floating point distances
-  //   kNearestDistances[i] = (float)uintKNearestDistances[i] / (float)UINT_MAX;
-
-  //   // copy indicated indexes from device to host
-  //   int idx = kNearestKeys[i];
-  //   cudaMemcpy(&kNearestVectors[i], &vectors[idx], sizeof(uint64_cu),
-  //              cudaMemcpyDeviceToHost);
-  // }
 
   cudaFree(uintKNearestDistances);
 }
