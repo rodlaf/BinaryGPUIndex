@@ -10,7 +10,7 @@ typedef unsigned long long int uint64_cu;
 /*
   We can shave off ~20ms of each call by performing the float to unsigned
   conversion directly in this function. We don't do this to show that the
-  algorithm is completely agnositc to the distance metric used, whether
+  algorithm is completely agnostic to the distance metric used, whether
   it returns a floating point value or an integer.
 */
 __device__ void cosineDistance(uint64_cu *a, uint64_cu *b, float *dest) {
@@ -92,8 +92,6 @@ void kNearestNeighbors(uint64_cu *vectors, unsigned *keys, uint64_cu *query,
   // convert unsigned integer distances back to floating point distances
   unsignedToFloat<<<1, blockSize>>>(uintKNearestDistances, kNearestDistances,
                                     k);
-  cudaDeviceSynchronize();
-
   // retrieve vectors from relevant keys
   retrieveVectorsFromKeys<<<1, blockSize>>>(vectors, kNearestKeys, k,
                                             kNearestVectors);
