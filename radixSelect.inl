@@ -177,12 +177,8 @@ void radixSelect(unsigned *values, unsigned *keys, int numValues, int k,
   thrust::fill(thrust::device, workingMem2 + countLessThan, workingMem2 + k,
                kthSmallestValue);
 
-  // copy from `workingMem1` into `kSmallestKeys` specified by
-  // caller
   cudaMemcpy(kSmallestKeys, workingMem1, k * sizeof(unsigned),
              cudaMemcpyDeviceToDevice);
-
-  // copy from `workingMem2` into `kSmallestValues` specified by caller
   cudaMemcpy(kSmallestValues, workingMem2, k * sizeof(unsigned),
              cudaMemcpyDeviceToDevice);
 
