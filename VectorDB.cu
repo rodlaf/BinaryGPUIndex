@@ -12,26 +12,19 @@
 //
 // a separate collection of deviceKey-to-vectorkey key-value pairs will be kept
 // in either CPU memory or the persistent key value store (e.g., RocksDB).
+//
+// in addition, deviceKeys will be sequential in order to enable quick vector 
+// retrieval by interpreting them as indexes in the on-device vector array 
 
 class VectorDB {
 private:
-  // Pointers to host memory
-  std::unordered_map keyVectorMap;
-
   // Pointers to device memory
   unsigned *workingMem1;
   unsigned *workingMem2;
   unsigned *workingMem3;
   uint64_cu *vectors;
   uint64_cu *queryVector;
-
-
-  // File where vectors and their keys are stored
-  std::ofstream vectorsFile;
-
-  void loadKeyVectorMap(char *vectorFile, std::unordered_map keyVectorMap) {
-    
-  }
+  unsigned *seqKeys; // sequential keys
 
 public:
   int count = 0;

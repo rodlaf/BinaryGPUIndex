@@ -37,6 +37,15 @@ __host__ void printBits(uint64_cu *x) {
   std::cout << b << std::endl;
 }
 
+__global__ void retrieveVectorsFromKeys(uint64_cu *vectors, unsigned *keys,
+                                        int numKeys, uint64_cu *retrieved) {
+  int idx = blockIdx.x * blockDim.x + threadIdx.x;
+  int stride = blockDim.x * gridDim.x;
+
+  for (int i = idx; i < numKeys; i += stride)
+    retrieved[i] = vectors[keys[i]];
+}
+
 int main(void) {
   int numIndexes = 970000000;
   int k = 10;
@@ -71,6 +80,10 @@ int main(void) {
   cudaMalloc(&indexes, numIndexes * sizeof(uint64_cu));
 
   // allocate and initalize keys on device
+  // TODO: would make code cleaner but would add ~6ms on ~1B vectors to
+  // move initalization of keys into kNearestNeighbors (thrust::sequence)
+  // such that the function does not use "keys" terminology and instead
+  // is defined as returning the array indexes of the closest k vectors.
   unsigned *keys;
   cudaMalloc(&keys, numIndexes * sizeof(unsigned));
   thrust::sequence(thrust::device, keys, keys + numIndexes);
@@ -99,14 +112,18 @@ int main(void) {
   cudaEventRecord(start, 0);
 
   kNearestNeighbors(indexes, keys, query, numIndexes, k, kNearestDistances,
-                    kNearestIndexes, kNearestKeys, workingMem1, workingMem2,
-                    workingMem3);
+                    kNearestKeys, workingMem1, workingMem2, workingMem3);
 
   cudaEventRecord(stop, 0);
   cudaEventSynchronize(stop);
   cudaEventElapsedTime(&time, start, stop);
 
   printf("Execution time:  %.3f ms \n", time);
+
+  // retrieve vectors from relevant keys
+  retrieveVectorsFromKeys<<<1, blockSize>>>(indexes, kNearestKeys, k,
+                                            kNearestIndexes);
+  cudaDeviceSynchronize();
 
   // copy results from device to host
   cudaMemcpy(hostKNearestDistances, kNearestDistances, k * sizeof(float),

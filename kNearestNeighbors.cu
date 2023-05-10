@@ -50,26 +50,10 @@ __global__ void unsignedToFloat(unsigned *uintValues, float *fValues,
     fValues[i] = (float)uintValues[i] / (float)UINT_MAX;
 }
 
-__global__ void retrieveVectorsFromKeys(uint64_cu *vectors, unsigned *keys,
-                                        unsigned *keysToRetrieve,
-                                        int numKeysToRetrieve, int numVectors,
-                                        uint64_cu *retrievedDest) {
-  int idx = blockIdx.x * blockDim.x + threadIdx.x;
-  int stride = blockDim.x * gridDim.x;
-
-  for (int i = idx; i < numVectors; i += stride)
-    for (int j = 0; j < numKeysToRetrieve; ++j)
-      if (keys[i] == keysToRetrieve[j]) {
-        retrievedDest[j] = vectors[i];
-        break;
-      }
-}
-
 void kNearestNeighbors(uint64_cu *vectors, unsigned *keys, uint64_cu *query,
                        int numVectors, int k, float *kNearestDistances,
-                       uint64_cu *kNearestVectors, unsigned *kNearestKeys,
-                       unsigned *workingMem1, unsigned *workingMem2,
-                       unsigned *workingMem3) {
+                       unsigned *kNearestKeys, unsigned *workingMem1,
+                       unsigned *workingMem2, unsigned *workingMem3) {
   int blockSize = 1024;
   int numBlocks = (numVectors + blockSize - 1) / blockSize;
 
@@ -87,7 +71,6 @@ void kNearestNeighbors(uint64_cu *vectors, unsigned *keys, uint64_cu *query,
   cudaDeviceSynchronize();
 
   // convert distances to unsigned integers
-  // ~20ms on ~1B vectors
   floatToUnsigned<<<numBlocks, blockSize>>>(distances, uintDistances,
                                             numVectors);
   cudaDeviceSynchronize();
@@ -99,11 +82,6 @@ void kNearestNeighbors(uint64_cu *vectors, unsigned *keys, uint64_cu *query,
   // convert unsigned integer distances back to floating point distances
   unsignedToFloat<<<1, blockSize>>>(uintKNearestDistances, kNearestDistances,
                                     k);
-  // retrieve vectors from relevant keys
-  // ~13ms on ~1B vectors
-  retrieveVectorsFromKeys<<<numBlocks, blockSize>>>(
-      vectors, keys, kNearestKeys, k, numVectors, kNearestVectors);
-  cudaDeviceSynchronize();
 
   cudaFree(uintKNearestDistances);
 }
