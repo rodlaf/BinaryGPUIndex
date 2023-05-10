@@ -9,6 +9,7 @@
 #include <thrust/host_vector.h>
 #include <thrust/random.h>
 #include <thrust/reduce.h>
+#include <thrust/sequence.h>
 
 #include "kNearestNeighbors.h"
 

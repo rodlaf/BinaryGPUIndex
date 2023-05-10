@@ -51,12 +51,18 @@ __global__ void unsignedToFloat(unsigned *uintValues, float *fValues,
 }
 
 __global__ void retrieveVectorsFromKeys(uint64_cu *vectors, unsigned *keys,
-                                        int numKeys, uint64_cu *retrieved) {
+                                        unsigned *keysToRetrieve,
+                                        int numKeysToRetrieve, int numVectors,
+                                        uint64_cu *retrievedDest) {
   int idx = blockIdx.x * blockDim.x + threadIdx.x;
   int stride = blockDim.x * gridDim.x;
 
-  for (int i = idx; i < numKeys; i += stride)
-    retrieved[i] = vectors[keys[i]];
+  for (int i = idx; i < numVectors; i += stride)
+    for (int j = 0; j < numKeysToRetrieve; ++j)
+      if (keys[i] == keysToRetrieve[j]) {
+        retrievedDest[j] = vectors[i];
+        break;
+      }
 }
 
 void kNearestNeighbors(uint64_cu *vectors, unsigned *keys, uint64_cu *query,
@@ -81,6 +87,7 @@ void kNearestNeighbors(uint64_cu *vectors, unsigned *keys, uint64_cu *query,
   cudaDeviceSynchronize();
 
   // convert distances to unsigned integers
+  // ~20ms on ~1B vectors
   floatToUnsigned<<<numBlocks, blockSize>>>(distances, uintDistances,
                                             numVectors);
   cudaDeviceSynchronize();
@@ -93,8 +100,9 @@ void kNearestNeighbors(uint64_cu *vectors, unsigned *keys, uint64_cu *query,
   unsignedToFloat<<<1, blockSize>>>(uintKNearestDistances, kNearestDistances,
                                     k);
   // retrieve vectors from relevant keys
-  retrieveVectorsFromKeys<<<1, blockSize>>>(vectors, kNearestKeys, k,
-                                            kNearestVectors);
+  // ~13ms on ~1B vectors
+  retrieveVectorsFromKeys<<<numBlocks, blockSize>>>(
+      vectors, keys, kNearestKeys, k, numVectors, kNearestVectors);
   cudaDeviceSynchronize();
 
   cudaFree(uintKNearestDistances);
