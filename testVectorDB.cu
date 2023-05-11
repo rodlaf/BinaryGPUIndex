@@ -51,7 +51,9 @@ int main(void) {
     const std::string vKey = boost::uuids::to_string(uuid);
 
     // generate random vector using hash function
-    uint64_cu v = hash(~i);
+    uint64_cu data;
+    memcpy(&data, &uuid, 8);
+    uint64_cu v = hash(data);
     
     // insert vector
     vdb.insert(vKey, v);
