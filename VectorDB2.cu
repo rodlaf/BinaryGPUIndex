@@ -1,21 +1,10 @@
 #include <cstdio>
-
-#include "rocksdb/db.h"
-#include "rocksdb/options.h"
-#include "rocksdb/slice.h"
+#include <unordered_map>
+#include <string>
 
 #include <thrust/sequence.h>
 
 #include "kNearestNeighbors.h"
-
-using ROCKSDB_NAMESPACE::DB;
-using ROCKSDB_NAMESPACE::Iterator;
-using ROCKSDB_NAMESPACE::Options;
-using ROCKSDB_NAMESPACE::PinnableSlice;
-using ROCKSDB_NAMESPACE::ReadOptions;
-using ROCKSDB_NAMESPACE::Status;
-using ROCKSDB_NAMESPACE::WriteBatch;
-using ROCKSDB_NAMESPACE::WriteOptions;
 
 // Design decision: Separate deviceKeys and vectorKeys.
 //
@@ -55,9 +44,6 @@ private:
   uint64_cu *deviceQueryVector;
   unsigned *deviceKeys; // sequential keys
 
-  // Use RocksDB as persistent key-value store
-  rocksdb::DB *db;
-
   // Use an in-memory hash map to keep track of deviceKey to vectorKey mappings
   std::unordered_map<unsigned, std::string> keyMap;
 
@@ -67,25 +53,6 @@ public:
   // TODO: Make capacity public variable and ensure that it matches the passed
   // variable of the same name if a database is being reopened
   VectorDB(const std::string &name, int capacity) {
-    // ROCKSDB INITIALIZATION
-    // Open key value store or create it if it doesn't exist
-    Options options;
-    options.create_if_missing = true;
-    Status s = DB::Open(options, name, &db);
-    assert(s.ok());
-
-    // Retrieve numVectors variable if it exists or initialize it if it doesn't
-    std::string value;
-    s = db->Get(ReadOptions(), "numVectors", &value);
-    if (s.IsNotFound()) {
-      s = db->Put(WriteOptions(), "numVectors", std::to_string(0));
-      assert(s.ok());
-      numVectors = 0;
-    } else {
-      assert(s.ok());
-      numVectors = std::stoi(value);
-    }
-
     // CUDA INITIALIZATION
     // Allocate all on-device memory
     cudaMalloc(&workingMem1, capacity * sizeof(unsigned));
@@ -99,36 +66,10 @@ public:
     thrust::sequence(thrust::device, deviceKeys, deviceKeys + capacity);
 
     // Load vectors from db to device
-    unsigned iterCount = 0;
-    Iterator *iter = db->NewIterator(ReadOptions());
-    iter->SeekToFirst();
 
-    uint64_cu *hostVectors =
-        (uint64_cu *)malloc(numVectors * sizeof(uint64_cu));
-    for (; iter->Valid(); iter->Next(), ++iterCount) {
-      assert(iterCount <= numVectors);
-
-      // TODO: use column families so we don't have to do this kind of checking
-      if (iter->key().ToString() != "numVectors") {
-        hostVectors[iterCount] = std::stoull(iter->value().ToString());
-
-        // keep track of vectorKey
-        // NOTE: TODO: Make very clear to reader of this code that 
-        // deviceKeys MUST be a sequential set of integers ([0, 1, 2, ...])
-        // given this is how we are keeping track of deviceKey-to-vectorKey
-        // mappings
-        keyMap[iterCount] = iter->key().ToString();
-      }
-    }
-    delete iter;
-    cudaMemcpy(vectors, hostVectors, numVectors * sizeof(uint64_cu),
-               cudaMemcpyHostToDevice);
-    free(hostVectors);
   }
 
   ~VectorDB() {
-    delete db;
-
     cudaFree(workingMem1);
     cudaFree(workingMem2);
     cudaFree(workingMem3);
@@ -140,26 +81,13 @@ public:
   /*
     Inserts new key. Panics if key already exists
   */
-  void insert(const std::string &vectorKey, uint64_cu &vector) {
+  void insert(int numVectors, const char **vectorKeys, uint64_cu *vectors) {
     // NOTE: These two should eventually be made into a transaction
     // Check if the vectorKey exists
-    std::string value;
-    Status getStatus = db->Get(ReadOptions(), vectorKey, &value);
-    assert(getStatus.IsNotFound());
-
-    // Write to db and device
-    Status putStatus =
-        db->Put(WriteOptions(), vectorKey, std::to_string(vector));
-    assert(putStatus.ok());
-    cudaMemcpy(vectors + numVectors, &vector, sizeof(uint64_cu),
-               cudaMemcpyHostToDevice);
-    keyMap[(unsigned)numVectors] = vectorKey;
-
-    // Update numVectors
-    Status s =
-        db->Put(WriteOptions(), "numVectors", std::to_string(numVectors + 1));
-    assert(s.ok());
-    numVectors++;
+    for (int i = 0; i < numVectors; ++i) {
+      printf("vectorKey: %s, vector: ", vectorKeys[i]);
+      printBits(vectors[i]);
+    }
   }
 
   /*
