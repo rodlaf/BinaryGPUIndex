@@ -66,14 +66,15 @@ int main(void) {
   int k = 10;
   uint64_cu queryVector = hash(~1);
   uint64_cu *kNearestVectors = (uint64_cu *)malloc(k * sizeof(uint64_cu));
+  float *kNearestDistances = (float *)malloc(k * sizeof(float));
 
-  vdb.query(&queryVector, k, kNearestVectors);
+  vdb.query(&queryVector, k, kNearestDistances, kNearestVectors);
 
   // print results
   printf("Query: ");
   printBits(queryVector);
   for (int i = 0; i < k; ++i) {
-    printf("%d: ", i);
+    printf("%d: %8.8f ", i, kNearestDistances[i]);
     printBits(kNearestVectors[i]);
   }
 
