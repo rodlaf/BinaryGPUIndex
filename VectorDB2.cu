@@ -1,6 +1,7 @@
 #include <cstdio>
-#include <unordered_map>
+#include <fstream>
 #include <string>
+#include <unordered_map>
 
 #include <thrust/sequence.h>
 
@@ -34,6 +35,10 @@ void printBits(uint64_cu &x) {
   std::cout << b << std::endl;
 }
 
+using boost::uuids::random_generator;
+using boost::uuids::to_string;
+using boost::uuids::uuid;
+
 class VectorDB {
 private:
   // Pointers to device memory
@@ -45,14 +50,17 @@ private:
   unsigned *deviceKeys; // sequential keys
 
   // Use an in-memory hash map to keep track of deviceKey to vectorKey mappings
-  std::unordered_map<unsigned, std::string> keyMap;
+  std::unordered_map<unsigned, uuid> idMap;
 
 public:
   int numVectors;
+  const char *name;
 
   // TODO: Make capacity public variable and ensure that it matches the passed
   // variable of the same name if a database is being reopened
-  VectorDB(const std::string &name, int capacity) {
+  VectorDB(const char *nameParam, int capacity) {
+    name = nameParam;
+
     // CUDA INITIALIZATION
     // Allocate all on-device memory
     cudaMalloc(&workingMem1, capacity * sizeof(unsigned));
@@ -66,7 +74,7 @@ public:
     thrust::sequence(thrust::device, deviceKeys, deviceKeys + capacity);
 
     // Load vectors from db to device
-
+    numVectors = 0;
   }
 
   ~VectorDB() {
@@ -81,17 +89,34 @@ public:
   /*
     Inserts new key. Panics if key already exists
   */
-  void insert(int numVectors, const char **vectorKeys, uint64_cu *vectors) {
-    // NOTE: These two should eventually be made into a transaction
-    // Check if the vectorKey exists
-    for (int i = 0; i < numVectors; ++i) {
-      printf("vectorKey: %s, vector: ", vectorKeys[i]);
-      printBits(vectors[i]);
+  void insert(int numToAdd, uuid *ids, uint64_cu *vectors) {
+    // write ids and vectors to disk
+    std::ofstream f;
+    f.open(name, std::ios_base::app);
+    int lineSize = sizeof(uuid) + sizeof(uint64_cu) + sizeof('\n');
+    char *buffer = (char *)malloc(numToAdd * lineSize);
+    for (int i = 0; i < numToAdd; ++i) {
+      memcpy(buffer + i * lineSize, &ids[i], 16);
+      memcpy(buffer + i * lineSize + sizeof(uuid), &vectors[i], 8);
+      memcpy(buffer + i * lineSize + sizeof(uuid) + sizeof(uint64_cu), "\n", 1);
     }
+    f.write(buffer, numToAdd * lineSize);
+    f.close();
+
+    // insert ids into keymap
+    for (int i = 0; i < numToAdd; ++i) {
+      idMap[i] = ids[i];
+    }
+    // copy vectors to device
+    cudaMemcpy(vectors + numVectors, vectors, numToAdd * sizeof(uint64_cu),
+               cudaMemcpyHostToDevice);
+
+    // update numVectors
+    numVectors += numToAdd;
   }
 
   /*
-  
+
   */
   void query(uint64_cu *queryVector, int k, float *kNearestDistances,
              uint64_cu *kNearestVectors, std::string kNearestVectorKeys[]) {
@@ -120,8 +145,8 @@ public:
                cudaMemcpyDeviceToHost);
     cudaMemcpy(kNearestVectors, deviceKNearestVectors, k * sizeof(uint64_cu),
                cudaMemcpyDeviceToHost);
-    for (int i = 0; i < k; ++i)
-      kNearestVectorKeys[i] = keyMap[deviceKNearestKeys[i]];
+    // for (int i = 0; i < k; ++i)
+    //   kNearestVectorKeys[i] = idMap[deviceKNearestKeys[i]];
 
     cudaFree(deviceKNearestDistances);
     cudaFree(deviceKNearestKeys);

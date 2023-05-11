@@ -18,18 +18,23 @@ uint64_cu hash(uint64_cu h) {
 }
 
 int main(void) {
+  using boost::uuids::uuid;
+  using boost::uuids::random_generator;
 
-  VectorDB vdb("test.txt", 10);
+  // open vector db
+  VectorDB vdb("test.txt", 1000);
 
+  // generate random ids and vectors
   int numVectors = 10;
-  const char **vectorKeys = (const char **)malloc(numVectors * sizeof(const char *));
+  uuid *ids = (uuid *)malloc(numVectors * sizeof(uuid));
   uint64_cu *vectors = (uint64_cu *)malloc(numVectors * sizeof(uint64_cu));
   for (int i = 0; i < numVectors; ++i) {
-    vectorKeys[i] = "1234";
+    ids[i] = random_generator()();
     vectors[i] = hash(~i);
   }
 
-  vdb.insert(numVectors, vectorKeys, vectors);
+  // insert random ids and vectors
+  vdb.insert(numVectors, ids, vectors);
 
   return 0;
 }
