@@ -17,7 +17,7 @@ using ROCKSDB_NAMESPACE::Status;
 using ROCKSDB_NAMESPACE::WriteBatch;
 using ROCKSDB_NAMESPACE::WriteOptions;
 
-// Design decision: Seperate deviceKeys and vectorKeys.
+// Design decision: Separate deviceKeys and vectorKeys.
 //
 // vectorKeys can be very long (e.g., a whole UUID) but deviceKeys must
 // be a single unsigned integer (e.g., 32 bits). This imposes a limitation
@@ -58,9 +58,14 @@ private:
   // Use RocksDB as persistent key-value store
   rocksdb::DB *db;
 
+  // Use an in-memory hash map to keep track of deviceKey to vectorKey mappings
+  std::unordered_map<unsigned, std::string> keyMap;
+
 public:
   int numVectors;
 
+  // TODO: Make capacity public variable and ensure that it matches the passed
+  // variable of the same name if a database is being reopened
   VectorDB(const std::string &name, int capacity) {
     // ROCKSDB INITIALIZATION
     // Open key value store or create it if it doesn't exist
@@ -69,7 +74,7 @@ public:
     Status s = DB::Open(options, name, &db);
     assert(s.ok());
 
-    // Retrieve numVectors variable if it exists or initialize it doesn't
+    // Retrieve numVectors variable if it exists or initialize it if it doesn't
     std::string value;
     s = db->Get(ReadOptions(), "numVectors", &value);
     if (s.IsNotFound()) {
@@ -94,7 +99,7 @@ public:
     thrust::sequence(thrust::device, deviceKeys, deviceKeys + capacity);
 
     // Load vectors from db to device
-    int iterCount = 0;
+    unsigned iterCount = 0;
     Iterator *iter = db->NewIterator(ReadOptions());
     iter->SeekToFirst();
 
@@ -106,6 +111,13 @@ public:
       // TODO: use column families so we don't have to do this kind of checking
       if (iter->key().ToString() != "numVectors") {
         hostVectors[iterCount] = std::stoull(iter->value().ToString());
+
+        // keep track of vectorKey
+        // NOTE: TODO: Make very clear to reader of this code that 
+        // deviceKeys MUST be a sequential set of integers ([0, 1, 2, ...])
+        // given this is how we are keeping track of deviceKey-to-vectorKey
+        // mappings
+        keyMap[iterCount] = iter->key().ToString();
       }
     }
     delete iter;
@@ -125,10 +137,6 @@ public:
     cudaFree(deviceKeys);
   }
 
-  // void loadDevice() {
-
-  // }
-
   /*
     Inserts new key. Panics if key already exists
   */
@@ -145,6 +153,7 @@ public:
     assert(putStatus.ok());
     cudaMemcpy(vectors + numVectors, &vector, sizeof(uint64_cu),
                cudaMemcpyHostToDevice);
+    keyMap[(unsigned)numVectors] = vectorKey;
 
     // Update numVectors
     Status s =
@@ -153,6 +162,9 @@ public:
     numVectors++;
   }
 
+  /*
+  
+  */
   void query(uint64_cu *queryVector, int k, float *kNearestDistances,
              uint64_cu *kNearestVectors) {
     float *deviceKNearestDistances;
@@ -171,6 +183,9 @@ public:
 
     for (int i = 0; i < k; ++i) {
       printf("deviceKNearestKeys: %d: %u\n", i, deviceKNearestKeys[i]);
+    }
+    for (int i = 0; i < k; ++i) {
+      printf("vectorKeys: %d: %s\n", i, keyMap[deviceKNearestKeys[i]].c_str());
     }
     // retrieve vectors from relevant keys
     retrieveVectorsFromKeys<<<1, 1024>>>(vectors, deviceKNearestKeys, k,
