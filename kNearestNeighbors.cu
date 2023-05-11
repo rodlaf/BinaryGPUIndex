@@ -82,6 +82,7 @@ void kNearestNeighbors(uint64_cu *vectors, unsigned *keys, uint64_cu *query,
   // convert unsigned integer distances back to floating point distances
   unsignedToFloat<<<1, blockSize>>>(uintKNearestDistances, kNearestDistances,
                                     k);
+  cudaDeviceSynchronize();
 
   cudaFree(uintKNearestDistances);
 }

@@ -30,7 +30,18 @@ using ROCKSDB_NAMESPACE::WriteOptions;
 // in addition, deviceKeys will be sequential in order to enable quick vector
 // retrieval by interpreting them as indexes in the on-device vector array
 
-__host__ void printBits(uint64_cu &x) {
+
+// Requires keys to be sequential, representing array indexes
+__global__ void retrieveVectorsFromKeys(uint64_cu *vectors, unsigned *keys,
+                                      int numKeys, uint64_cu *retrieved) {
+  int idx = blockIdx.x * blockDim.x + threadIdx.x;
+  int stride = blockDim.x * gridDim.x;
+
+  for (int i = idx; i < numKeys; i += stride)
+    retrieved[i] = vectors[keys[i]];
+}
+
+void printBits(uint64_cu &x) {
   std::bitset<sizeof(uint64_cu) * CHAR_BIT> b(x);
   std::cout << b << std::endl;
 }
@@ -42,7 +53,7 @@ private:
   unsigned *workingMem2;
   unsigned *workingMem3;
   uint64_cu *vectors;
-  uint64_cu *queryVector;
+  uint64_cu *deviceQueryVector;
   unsigned *deviceKeys; // sequential keys
 
   // Use RocksDB as persistent key-value store
@@ -52,13 +63,8 @@ public:
 
   VectorDB(const std::string &name, int capacity) {
     // ROCKSDB INITIALIZATION
-
-    Options options;
-
-    options.IncreaseParallelism();
-    options.OptimizeLevelStyleCompaction();
-
     // Open key value store or create it if it doesn't exist
+    Options options;
     options.create_if_missing = true;
     Status s = DB::Open(options, name, &db);
     assert(s.ok());
@@ -71,37 +77,40 @@ public:
       assert(s.ok());
       numVectors = 0;
     } else {
+      assert(s.ok());
       numVectors = std::stoi(value);
     }
 
     // CUDA INITIALIZATION
-
     // Allocate all on-device memory
     cudaMalloc(&workingMem1, capacity * sizeof(unsigned));
     cudaMalloc(&workingMem2, capacity * sizeof(unsigned));
     cudaMalloc(&workingMem3, capacity * sizeof(unsigned));
-    cudaMalloc(&vectors, capacity * sizeof(uint64_cu));
-    cudaMalloc(&queryVector, sizeof(uint64_cu));
+    cudaMallocManaged(&vectors, capacity * sizeof(uint64_cu));
+    cudaMallocManaged(&deviceQueryVector, sizeof(uint64_cu));
     cudaMalloc(&deviceKeys, capacity * sizeof(unsigned));
 
     // Initialize device keys
-    thrust::sequence(thrust::device, deviceKeys, deviceKeys + numVectors);
+    thrust::sequence(thrust::device, deviceKeys, deviceKeys + capacity);
 
     // Load vectors from db to device
     int iterCount = 0;
     Iterator *iter = db->NewIterator(ReadOptions());
     iter->SeekToFirst();
+
+    uint64_cu *hostVectors = (uint64_cu *)malloc(numVectors * sizeof(uint64_cu));
     for (; iter->Valid(); iter->Next(), ++iterCount) {
       assert(iterCount <= numVectors);
 
       // TODO: use column families so we don't have to do this kind of checking
       if (iter->key().ToString() != "numVectors") {
-        uint64_cu v = std::stoull(iter->value().ToString());
-        cudaMemcpy(vectors + iterCount, &v, sizeof(uint64_cu),
-                   cudaMemcpyHostToDevice);
+        hostVectors[iterCount] = std::stoull(iter->value().ToString());
       }
     }
     delete iter;
+    cudaMemcpy(vectors, hostVectors, numVectors * sizeof(uint64_cu),
+               cudaMemcpyHostToDevice);         
+    free(hostVectors);
   }
 
   ~VectorDB() {
@@ -111,37 +120,81 @@ public:
     cudaFree(workingMem2);
     cudaFree(workingMem3);
     cudaFree(vectors);
-    cudaFree(queryVector);
+    cudaFree(deviceQueryVector);
     cudaFree(deviceKeys);
   }
 
+  // void loadDevice() {
+
+  // }
+
   /*
-    Creates new key or overwrites if key already exists
+    Inserts new key. Panics if key already exists
   */
   void insert(const std::string &vectorKey, uint64_cu &vector) {
     // NOTE: These two should eventually be made into a transaction
     // Check if the vectorKey exists
     std::string value;
     Status getStatus = db->Get(ReadOptions(), vectorKey, &value);
-    assert(getStatus.ok() || getStatus.IsNotFound());
+    assert(getStatus.IsNotFound());
 
     // Write to db and device
     Status putStatus =
         db->Put(WriteOptions(), vectorKey, std::to_string(vector));
     assert(putStatus.ok());
-    cudaMemcpy(&vector, vectors + numVectors, sizeof(uint64_cu), cudaMemcpyHostToDevice);
+    cudaMemcpy(vectors + numVectors, &vector, sizeof(uint64_cu), cudaMemcpyHostToDevice);
 
-    // Update numVectors if it is a new key
-    if (getStatus.IsNotFound()) {
-      Status s =
-          db->Put(WriteOptions(), "numVectors", std::to_string(numVectors + 1));
-      assert(s.ok());
-      numVectors++;
-    }
+    // Update numVectors
+    Status s =
+        db->Put(WriteOptions(), "numVectors", std::to_string(numVectors + 1));
+    assert(s.ok());
+    numVectors++;
   }
 
-  // uint64_cu& query() {
+  void query(uint64_cu *queryVector, int k, uint64_cu *kNearestVectors) {
+    float *deviceKNearestDistances;
+    unsigned *deviceKNearestKeys;
+    uint64_cu *deviceKNearestVectors;
+    cudaMallocManaged(&deviceKNearestDistances, k * sizeof(unsigned));
+    cudaMallocManaged(&deviceKNearestKeys, k * sizeof(unsigned));
+    cudaMalloc(&deviceKNearestVectors, k * sizeof(uint64_cu));
 
-  // }
+    cudaMemcpy(deviceQueryVector, queryVector, sizeof(uint64_cu), cudaMemcpyHostToDevice);
+
+    printBits(*deviceQueryVector);
+    printf("numVectors: %d\n", numVectors);
+    for (int i = 0; i < numVectors; ++i) {
+      printf("vector: %d: ", i);
+      printBits(vectors[i]);
+    }
+    for (int i = 0; i < numVectors; ++i) {
+      printf("vector: %d: ", i);
+      printBits(vectors[i]);
+    }
+
+    kNearestNeighbors(vectors, deviceKeys, deviceQueryVector, numVectors, k, 
+                      deviceKNearestDistances,
+                      deviceKNearestKeys, workingMem1, 
+                      workingMem2, workingMem3);
+    
+    for (int i = 0; i < k; ++i) {
+      printf("deviceKNearestKeys: %d: %u\n", i, deviceKNearestKeys[i]);
+    }
+    // retrieve vectors from relevant keys
+    retrieveVectorsFromKeys<<<1, 1024>>>(vectors, deviceKNearestKeys, k,
+                                              deviceKNearestVectors);
+    cudaDeviceSynchronize();
+
+    for (int i = 0; i < k; ++i) {
+      printf("distance: %d: %f\n", i, deviceKNearestDistances[i]);
+    }
+
+    // copy solution from device to host specified by caller
+    cudaMemcpy(kNearestVectors, deviceKNearestVectors, k * sizeof(uint64_cu), cudaMemcpyDeviceToHost);
+
+    cudaFree(deviceKNearestDistances);
+    cudaFree(deviceKNearestKeys);
+    cudaFree(deviceKNearestVectors);
+  }
 };
 
