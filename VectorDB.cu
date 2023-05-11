@@ -30,10 +30,9 @@ using ROCKSDB_NAMESPACE::WriteOptions;
 // in addition, deviceKeys will be sequential in order to enable quick vector
 // retrieval by interpreting them as indexes in the on-device vector array
 
-
 // Requires keys to be sequential, representing array indexes
 __global__ void retrieveVectorsFromKeys(uint64_cu *vectors, unsigned *keys,
-                                      int numKeys, uint64_cu *retrieved) {
+                                        int numKeys, uint64_cu *retrieved) {
   int idx = blockIdx.x * blockDim.x + threadIdx.x;
   int stride = blockDim.x * gridDim.x;
 
@@ -58,6 +57,7 @@ private:
 
   // Use RocksDB as persistent key-value store
   rocksdb::DB *db;
+
 public:
   int numVectors;
 
@@ -98,7 +98,8 @@ public:
     Iterator *iter = db->NewIterator(ReadOptions());
     iter->SeekToFirst();
 
-    uint64_cu *hostVectors = (uint64_cu *)malloc(numVectors * sizeof(uint64_cu));
+    uint64_cu *hostVectors =
+        (uint64_cu *)malloc(numVectors * sizeof(uint64_cu));
     for (; iter->Valid(); iter->Next(), ++iterCount) {
       assert(iterCount <= numVectors);
 
@@ -109,7 +110,7 @@ public:
     }
     delete iter;
     cudaMemcpy(vectors, hostVectors, numVectors * sizeof(uint64_cu),
-               cudaMemcpyHostToDevice);         
+               cudaMemcpyHostToDevice);
     free(hostVectors);
   }
 
@@ -142,7 +143,8 @@ public:
     Status putStatus =
         db->Put(WriteOptions(), vectorKey, std::to_string(vector));
     assert(putStatus.ok());
-    cudaMemcpy(vectors + numVectors, &vector, sizeof(uint64_cu), cudaMemcpyHostToDevice);
+    cudaMemcpy(vectors + numVectors, &vector, sizeof(uint64_cu),
+               cudaMemcpyHostToDevice);
 
     // Update numVectors
     Status s =
@@ -151,7 +153,8 @@ public:
     numVectors++;
   }
 
-  void query(uint64_cu *queryVector, int k, float *kNearestDistances, uint64_cu *kNearestVectors) {
+  void query(uint64_cu *queryVector, int k, float *kNearestDistances,
+             uint64_cu *kNearestVectors) {
     float *deviceKNearestDistances;
     unsigned *deviceKNearestKeys;
     uint64_cu *deviceKNearestVectors;
@@ -159,43 +162,29 @@ public:
     cudaMallocManaged(&deviceKNearestKeys, k * sizeof(unsigned));
     cudaMalloc(&deviceKNearestVectors, k * sizeof(uint64_cu));
 
-    cudaMemcpy(deviceQueryVector, queryVector, sizeof(uint64_cu), cudaMemcpyHostToDevice);
+    cudaMemcpy(deviceQueryVector, queryVector, sizeof(uint64_cu),
+               cudaMemcpyHostToDevice);
 
-    printBits(*deviceQueryVector);
-    printf("numVectors: %d\n", numVectors);
-    for (int i = 0; i < numVectors; ++i) {
-      printf("vector: %d: ", i);
-      printBits(vectors[i]);
-    }
-    for (int i = 0; i < numVectors; ++i) {
-      printf("vector: %d: ", i);
-      printBits(vectors[i]);
-    }
-
-    kNearestNeighbors(vectors, deviceKeys, deviceQueryVector, numVectors, k, 
-                      deviceKNearestDistances,
-                      deviceKNearestKeys, workingMem1, 
+    kNearestNeighbors(vectors, deviceKeys, deviceQueryVector, numVectors, k,
+                      deviceKNearestDistances, deviceKNearestKeys, workingMem1,
                       workingMem2, workingMem3);
-    
+
     for (int i = 0; i < k; ++i) {
       printf("deviceKNearestKeys: %d: %u\n", i, deviceKNearestKeys[i]);
     }
     // retrieve vectors from relevant keys
     retrieveVectorsFromKeys<<<1, 1024>>>(vectors, deviceKNearestKeys, k,
-                                              deviceKNearestVectors);
+                                         deviceKNearestVectors);
     cudaDeviceSynchronize();
 
-    // for (int i = 0; i < k; ++i) {
-    //   printf("distance: %d: %f\n", i, deviceKNearestDistances[i]);
-    // }
-
     // copy solution from device to host specified by caller
-    cudaMemcpy(kNearestDistances, deviceKNearestDistances, k * sizeof(float), cudaMemcpyDeviceToHost);
-    cudaMemcpy(kNearestVectors, deviceKNearestVectors, k * sizeof(uint64_cu), cudaMemcpyDeviceToHost);
+    cudaMemcpy(kNearestDistances, deviceKNearestDistances, k * sizeof(float),
+               cudaMemcpyDeviceToHost);
+    cudaMemcpy(kNearestVectors, deviceKNearestVectors, k * sizeof(uint64_cu),
+               cudaMemcpyDeviceToHost);
 
     cudaFree(deviceKNearestDistances);
     cudaFree(deviceKNearestKeys);
     cudaFree(deviceKNearestVectors);
   }
 };
-
