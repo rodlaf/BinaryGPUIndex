@@ -166,7 +166,7 @@ public:
   
   */
   void query(uint64_cu *queryVector, int k, float *kNearestDistances,
-             uint64_cu *kNearestVectors) {
+             uint64_cu *kNearestVectors, std::string kNearestVectorKeys[]) {
     float *deviceKNearestDistances;
     unsigned *deviceKNearestKeys;
     uint64_cu *deviceKNearestVectors;
@@ -174,6 +174,7 @@ public:
     cudaMallocManaged(&deviceKNearestKeys, k * sizeof(unsigned));
     cudaMalloc(&deviceKNearestVectors, k * sizeof(uint64_cu));
 
+    // copy query vector to device
     cudaMemcpy(deviceQueryVector, queryVector, sizeof(uint64_cu),
                cudaMemcpyHostToDevice);
 
@@ -181,12 +182,6 @@ public:
                       deviceKNearestDistances, deviceKNearestKeys, workingMem1,
                       workingMem2, workingMem3);
 
-    for (int i = 0; i < k; ++i) {
-      printf("deviceKNearestKeys: %d: %u\n", i, deviceKNearestKeys[i]);
-    }
-    for (int i = 0; i < k; ++i) {
-      printf("vectorKeys: %d: %s\n", i, keyMap[deviceKNearestKeys[i]].c_str());
-    }
     // retrieve vectors from relevant keys
     retrieveVectorsFromKeys<<<1, 1024>>>(vectors, deviceKNearestKeys, k,
                                          deviceKNearestVectors);
@@ -197,6 +192,8 @@ public:
                cudaMemcpyDeviceToHost);
     cudaMemcpy(kNearestVectors, deviceKNearestVectors, k * sizeof(uint64_cu),
                cudaMemcpyDeviceToHost);
+    for (int i = 0; i < k; ++i)
+      kNearestVectorKeys[i] = keyMap[deviceKNearestKeys[i]];
 
     cudaFree(deviceKNearestDistances);
     cudaFree(deviceKNearestKeys);

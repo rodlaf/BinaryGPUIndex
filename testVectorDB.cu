@@ -34,7 +34,7 @@ int main(void) {
 
   const std::string vdbName = "/tmp/testdb";
   int a10gCapacity = 1 << 20;
-  int numVectorsToInsert = 100;
+  int numVectorsToInsert = 10000;
 
   auto t1 = high_resolution_clock::now();
   VectorDB vdb(vdbName, a10gCapacity);
@@ -63,18 +63,19 @@ int main(void) {
   printf("numVectors: %d\n", vdb.numVectors);
 
   // query
-  int k = 10;
+  const int k = 10;
   uint64_cu queryVector = hash(~1);
   uint64_cu *kNearestVectors = (uint64_cu *)malloc(k * sizeof(uint64_cu));
   float *kNearestDistances = (float *)malloc(k * sizeof(float));
+  std::string kNearestVectorKeys[k];
 
-  vdb.query(&queryVector, k, kNearestDistances, kNearestVectors);
+  vdb.query(&queryVector, k, kNearestDistances, kNearestVectors, kNearestVectorKeys);
 
   // print results
   printf("Query: ");
   printBits(queryVector);
   for (int i = 0; i < k; ++i) {
-    printf("%d: %8.8f ", i, kNearestDistances[i]);
+    printf("%d: %s %8.8f ", i, kNearestVectorKeys[i].c_str(), kNearestDistances[i]);
     printBits(kNearestVectors[i]);
   }
 
