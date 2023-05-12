@@ -50,6 +50,9 @@ private:
   unsigned *deviceKeys; // sequential keys
 
   // Use an in-memory hash map to keep track of deviceKey to vectorKey mappings
+  // In practice, this means vector ids can't be too big. An alternate 
+  // implementation could retrieve ids from disk instead. This would be much 
+  // slower for large k when querying
   std::unordered_map<unsigned, uuid> idMap;
 
 public:
@@ -77,9 +80,20 @@ public:
     std::ifstream rf(name);
     std::string str;
     while (std::getline(rf, str)) {
+      // Get id
       uuid id;
       memcpy(&id, str.c_str(), sizeof(uuid));
-      printf("%s\n", to_string(id).c_str());
+
+      // Get vector
+      uint64_cu vector; 
+      memcpy(&vector, str.c_str() + sizeof(uuid), sizeof(uint64_cu));
+
+      printf("%s ", to_string(id).c_str());
+      printBits(vector);
+
+      // Record id in idMap
+      idMap[numVectors] = id;
+      numVectors++;
     }
   }
 
