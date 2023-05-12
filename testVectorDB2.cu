@@ -22,10 +22,10 @@ int main(void) {
   using boost::uuids::random_generator;
 
   // open vector db
-  VectorDB vdb("test.txt", 1000);
+  VectorDB vdb("test.txt", 1 << 20);
 
   // generate random ids and vectors
-  int numVectors = 100;
+  int numVectors = 1 << 20;
   uuid *ids = (uuid *)malloc(numVectors * sizeof(uuid));
   uint64_cu *vectors = (uint64_cu *)malloc(numVectors * sizeof(uint64_cu));
   for (int i = 0; i < numVectors; ++i) {

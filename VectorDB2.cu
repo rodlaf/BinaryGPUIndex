@@ -65,8 +65,8 @@ public:
     cudaMalloc(&workingMem1, capacity * sizeof(unsigned));
     cudaMalloc(&workingMem2, capacity * sizeof(unsigned));
     cudaMalloc(&workingMem3, capacity * sizeof(unsigned));
-    cudaMallocManaged(&vectors, capacity * sizeof(uint64_cu));
-    cudaMallocManaged(&deviceQueryVector, sizeof(uint64_cu));
+    cudaMalloc(&vectors, capacity * sizeof(uint64_cu));
+    cudaMalloc(&deviceQueryVector, sizeof(uint64_cu));
     cudaMalloc(&deviceKeys, capacity * sizeof(unsigned));
 
     // Initialize device keys
@@ -113,12 +113,6 @@ public:
 
     // update numVectors
     numVectors += numToAdd;
-
-    printf("numVectors: %d\n", numVectors);
-    for (int i = 0; i < numVectors; ++i) {
-      printf("vectors: %d: ", i);
-      printBits(vectors[i]);
-    }
   }
 
   /*
@@ -129,16 +123,9 @@ public:
     float *deviceKNearestDistances;
     unsigned *deviceKNearestKeys;
     uint64_cu *deviceKNearestVectors;
-    cudaMallocManaged(&deviceKNearestDistances, k * sizeof(float));
+    cudaMalloc(&deviceKNearestDistances, k * sizeof(float));
     cudaMallocManaged(&deviceKNearestKeys, k * sizeof(unsigned));
     cudaMalloc(&deviceKNearestVectors, k * sizeof(uint64_cu));
-
-    // printf("numVectors: %d\n", numVectors);
-    // for (int i = 0; i < numVectors; ++i) {
-    //   printf("vectors: %d: ", i);
-    //   printBits(vectors[i]);
-    // }
-
 
     // copy query vector to device
     cudaMemcpy(deviceQueryVector, queryVector, sizeof(uint64_cu),
@@ -152,9 +139,6 @@ public:
     retrieveVectorsFromKeys<<<1, 1024>>>(vectors, deviceKNearestKeys, k,
                                          deviceKNearestVectors);
     cudaDeviceSynchronize();
-
-    for (int i = 0; i < k; ++i)
-      printf("deviceKNearestDistances: %d: %f\n", i, deviceKNearestDistances[i]);
 
     // copy solution from device to host specified by caller
     cudaMemcpy(kNearestDistances, deviceKNearestDistances, k * sizeof(float),
