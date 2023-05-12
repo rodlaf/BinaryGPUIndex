@@ -32,7 +32,7 @@ int main(void) {
   // open vector db
   printf("Opening...");
   auto t1 = high_resolution_clock::now();
-  VectorDB vdb(vdbName, 1 << 20);
+  VectorDB vdb(vdbName, 950000000);
   auto t2 = high_resolution_clock::now();
   auto ms_int = duration_cast<milliseconds>(t2 - t1);
   printf(" Done. Execution time: %ldms.\n", ms_int.count());

@@ -60,19 +60,20 @@ public:
   // variable of the same name if a database is being reopened
   VectorDB(const char *nameParam, int capacity) {
     name = nameParam;
+    
+    // Allocate deviceKeys and initialize (initialization requires memory)
+    cudaMalloc(&deviceKeys, capacity * sizeof(unsigned));
+    thrust::sequence(thrust::device, deviceKeys, deviceKeys + capacity);
 
-    // Allocate all on-device memory
+    // Allocate rest of on-device memory
     cudaMalloc(&workingMem1, capacity * sizeof(unsigned));
     cudaMalloc(&workingMem2, capacity * sizeof(unsigned));
     cudaMalloc(&workingMem3, capacity * sizeof(unsigned));
     cudaMalloc(&vectors, capacity * sizeof(uint64_cu));
     cudaMalloc(&deviceQueryVector, sizeof(uint64_cu));
-    cudaMalloc(&deviceKeys, capacity * sizeof(unsigned));
-
-    // Initialize device keys
-    thrust::sequence(thrust::device, deviceKeys, deviceKeys + capacity);
 
     // Load vectors from db to device
+    // TODO
     numVectors = 0;
   }
 
