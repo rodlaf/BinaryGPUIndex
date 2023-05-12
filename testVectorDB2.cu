@@ -25,7 +25,7 @@ int main(void) {
   VectorDB vdb("test.txt", 1000);
 
   // generate random ids and vectors
-  int numVectors = 10;
+  int numVectors = 100;
   uuid *ids = (uuid *)malloc(numVectors * sizeof(uuid));
   uint64_cu *vectors = (uint64_cu *)malloc(numVectors * sizeof(uint64_cu));
   for (int i = 0; i < numVectors; ++i) {
@@ -35,6 +35,25 @@ int main(void) {
 
   // insert random ids and vectors
   vdb.insert(numVectors, ids, vectors);
+
+  // query
+  const int k = 10;
+  uint64_cu queryVector = hash(~1);
+  uint64_cu *kNearestVectors = (uint64_cu *)malloc(k * sizeof(uint64_cu));
+  float *kNearestDistances = (float *)malloc(k * sizeof(float));
+  uuid kNearestIds[k];
+
+  vdb.query(&queryVector, k, kNearestDistances, kNearestVectors, kNearestIds);
+
+  // print results
+  printf("Query: ");
+  printBits(queryVector);
+  for (int i = 0; i < k; ++i) {
+    printf("%d: %s %8.8f ", i, boost::uuids::to_string(kNearestIds[i]).c_str(), kNearestDistances[i]);
+    printBits(kNearestVectors[i]);
+  }
+
+  free(kNearestVectors);
 
   return 0;
 }

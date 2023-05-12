@@ -61,7 +61,6 @@ public:
   VectorDB(const char *nameParam, int capacity) {
     name = nameParam;
 
-    // CUDA INITIALIZATION
     // Allocate all on-device memory
     cudaMalloc(&workingMem1, capacity * sizeof(unsigned));
     cudaMalloc(&workingMem2, capacity * sizeof(unsigned));
@@ -87,9 +86,9 @@ public:
   }
 
   /*
-    Inserts new key. Panics if key already exists
+    Inserts keys. Behaviour is undefined if ids already exist
   */
-  void insert(int numToAdd, uuid *ids, uint64_cu *vectors) {
+  void insert(int numToAdd, uuid *ids, uint64_cu *vectorsToAdd) {
     // write ids and vectors to disk
     std::ofstream f;
     f.open(name, std::ios_base::app);
@@ -97,7 +96,7 @@ public:
     char *buffer = (char *)malloc(numToAdd * lineSize);
     for (int i = 0; i < numToAdd; ++i) {
       memcpy(buffer + i * lineSize, &ids[i], 16);
-      memcpy(buffer + i * lineSize + sizeof(uuid), &vectors[i], 8);
+      memcpy(buffer + i * lineSize + sizeof(uuid), &vectorsToAdd[i], 8);
       memcpy(buffer + i * lineSize + sizeof(uuid) + sizeof(uint64_cu), "\n", 1);
     }
     f.write(buffer, numToAdd * lineSize);
@@ -107,25 +106,39 @@ public:
     for (int i = 0; i < numToAdd; ++i) {
       idMap[i] = ids[i];
     }
+
     // copy vectors to device
-    cudaMemcpy(vectors + numVectors, vectors, numToAdd * sizeof(uint64_cu),
+    cudaMemcpy(vectors + numVectors, vectorsToAdd, numToAdd * sizeof(uint64_cu),
                cudaMemcpyHostToDevice);
 
     // update numVectors
     numVectors += numToAdd;
+
+    printf("numVectors: %d\n", numVectors);
+    for (int i = 0; i < numVectors; ++i) {
+      printf("vectors: %d: ", i);
+      printBits(vectors[i]);
+    }
   }
 
   /*
 
   */
   void query(uint64_cu *queryVector, int k, float *kNearestDistances,
-             uint64_cu *kNearestVectors, std::string kNearestVectorKeys[]) {
+             uint64_cu *kNearestVectors, uuid *kNearestIds) {
     float *deviceKNearestDistances;
     unsigned *deviceKNearestKeys;
     uint64_cu *deviceKNearestVectors;
     cudaMallocManaged(&deviceKNearestDistances, k * sizeof(float));
     cudaMallocManaged(&deviceKNearestKeys, k * sizeof(unsigned));
     cudaMalloc(&deviceKNearestVectors, k * sizeof(uint64_cu));
+
+    // printf("numVectors: %d\n", numVectors);
+    // for (int i = 0; i < numVectors; ++i) {
+    //   printf("vectors: %d: ", i);
+    //   printBits(vectors[i]);
+    // }
+
 
     // copy query vector to device
     cudaMemcpy(deviceQueryVector, queryVector, sizeof(uint64_cu),
@@ -140,13 +153,16 @@ public:
                                          deviceKNearestVectors);
     cudaDeviceSynchronize();
 
+    for (int i = 0; i < k; ++i)
+      printf("deviceKNearestDistances: %d: %f\n", i, deviceKNearestDistances[i]);
+
     // copy solution from device to host specified by caller
     cudaMemcpy(kNearestDistances, deviceKNearestDistances, k * sizeof(float),
                cudaMemcpyDeviceToHost);
     cudaMemcpy(kNearestVectors, deviceKNearestVectors, k * sizeof(uint64_cu),
                cudaMemcpyDeviceToHost);
-    // for (int i = 0; i < k; ++i)
-    //   kNearestVectorKeys[i] = idMap[deviceKNearestKeys[i]];
+    for (int i = 0; i < k; ++i)
+      kNearestIds[i] = idMap[deviceKNearestKeys[i]];
 
     cudaFree(deviceKNearestDistances);
     cudaFree(deviceKNearestKeys);
