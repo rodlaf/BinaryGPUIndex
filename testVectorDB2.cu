@@ -41,8 +41,8 @@ int main(void) {
   // query
   const int k = 10;
   uint64_cu queryVector = hash(~1);
-  uint64_cu *kNearestVectors = (uint64_cu *)malloc(k * sizeof(uint64_cu));
-  float *kNearestDistances = (float *)malloc(k * sizeof(float));
+  uint64_cu kNearestVectors[k];
+  float kNearestDistances[k];
   uuid kNearestIds[k];
 
   vdb.query(&queryVector, k, kNearestDistances, kNearestVectors, kNearestIds);
@@ -54,8 +54,6 @@ int main(void) {
     printf("%d: %s %8.8f ", i, boost::uuids::to_string(kNearestIds[i]).c_str(), kNearestDistances[i]);
     printBits(kNearestVectors[i]);
   }
-
-  free(kNearestVectors);
 
   // delete file
   std::remove(vdbName);

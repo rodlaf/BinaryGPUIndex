@@ -118,8 +118,8 @@ public:
   /*
 
   */
-  void query(uint64_cu *queryVector, int k, float *kNearestDistances,
-             uint64_cu *kNearestVectors, uuid *kNearestIds) {
+  void query(uint64_cu *queryVector, int k, float kNearestDistances[],
+             uint64_cu kNearestVectors[], uuid kNearestIds[]) {
     float *deviceKNearestDistances;
     unsigned *deviceKNearestKeys;
     uint64_cu *deviceKNearestVectors;
