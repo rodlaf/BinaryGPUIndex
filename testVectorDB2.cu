@@ -18,6 +18,11 @@ uint64_cu hash(uint64_cu h) {
 }
 
 int main(void) {
+  using std::chrono::high_resolution_clock;
+  using std::chrono::duration_cast;
+  using std::chrono::duration;
+  using std::chrono::milliseconds;
+
   using boost::uuids::random_generator;
   using boost::uuids::to_string;
   using boost::uuids::uuid;
@@ -25,19 +30,30 @@ int main(void) {
   const char *vdbName = "test.txt";
 
   // open vector db
+  printf("Opening...");
+  auto t1 = high_resolution_clock::now();
   VectorDB vdb(vdbName, 1 << 20);
+  auto t2 = high_resolution_clock::now();
+  auto ms_int = duration_cast<milliseconds>(t2 - t1);
+  printf(" Done. Execution time: %ldms.\n", ms_int.count());
 
   // generate random ids and vectors
-  int numToAdd = 100;
-  uuid ids[numToAdd];
-  uint64_cu vectorsToAdd[numToAdd];
+  int numToAdd = 1 << 20;
+  // use heap since these arrays are huge
+  uuid *ids = (uuid *)malloc(numToAdd * sizeof(uuid));
+  uint64_cu *vectorsToAdd = (uint64_cu *)malloc(numToAdd * sizeof(uint64_cu));
   for (int i = 0; i < numToAdd; ++i) {
     ids[i] = random_generator()();
     vectorsToAdd[i] = hash(~i);
   }
 
   // insert random ids and vectors
+  printf("Inserting...");
+  t1 = high_resolution_clock::now();
   vdb.insert(numToAdd, ids, vectorsToAdd);
+  t2 = high_resolution_clock::now();
+  ms_int = duration_cast<milliseconds>(t2 - t1);
+  printf(" Done. Execution time: %ldms.\n", ms_int.count());
 
   // query
   const int k = 10;
@@ -46,7 +62,12 @@ int main(void) {
   float kNearestDistances[k];
   uuid kNearestIds[k];
 
+  printf("Querying...");
+  t1 = high_resolution_clock::now();
   vdb.query(queryVector, k, kNearestDistances, kNearestVectors, kNearestIds);
+  t2 = high_resolution_clock::now();
+  ms_int = duration_cast<milliseconds>(t2 - t1);
+  printf(" Done. Execution time: %ldms.\n", ms_int.count());
 
   // print results
   printf("Query: ");
