@@ -73,8 +73,14 @@ public:
     cudaMalloc(&deviceQueryVector, sizeof(uint64_cu));
 
     // Load vectors from db to device
-    // TODO
     numVectors = 0;
+    std::ifstream rf(name);
+    std::string str;
+    while (std::getline(rf, str)) {
+      uuid id;
+      memcpy(&id, str.c_str(), sizeof(uuid));
+      printf("%s\n", to_string(id).c_str());
+    }
   }
 
   ~VectorDB() {
