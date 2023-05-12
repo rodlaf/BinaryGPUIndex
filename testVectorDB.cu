@@ -41,7 +41,7 @@ int main(void) {
   // TODO: Do generation-insertion in batches, not just insertion
 
   // generate random ids and vectors
-  int numToAdd = 50;
+  int numToAdd = 3500000;
   // use heap since these arrays are huge
   printf("Generating..\n");
   t1 = high_resolution_clock::now();
@@ -67,7 +67,7 @@ int main(void) {
     if (i == numChunks - 1) {
       numInChunk = numToAdd % chunkSize;
     }
-    printf("numInChunk: %d\n", numInChunk);
+    // printf("numInChunk: %d\n", numInChunk);
     vdb->insert(numInChunk, ids + start, vectorsToAdd + start);
   }
   t2 = high_resolution_clock::now();

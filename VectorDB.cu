@@ -81,7 +81,7 @@ public:
     uint64_cu *buffer = (uint64_cu *)malloc(bufferSize * sizeof(uint64_cu));
     int bufferCount = 0;
     auto flushBuffer = [&]() { 
-      printf("bufferCount: %d\n", bufferCount);
+      // printf("bufferCount: %d\n", bufferCount);
       cudaMemcpy(vectors + numVectors, buffer, bufferCount * sizeof(uint64_cu), 
                  cudaMemcpyHostToDevice);
       numVectors += bufferCount;
@@ -89,12 +89,12 @@ public:
     };
 
     std::ifstream f(name);
-    int lineSize = sizeof(uuid) + sizeof(uint64_cu) + sizeof('\n');
-    assert(lineSize == 25);
+    int lineSize = sizeof(uuid) + sizeof(uint64_cu);
+    assert(lineSize == 24);
     char *lineBuf = (char *) malloc(lineSize);
 
     int lineCount = 0;
-    while (f.read(lineBuf, 25)) {
+    while (f.read(lineBuf, lineSize)) {
       lineCount++;
 
       // Get id and record in idMap
@@ -137,14 +137,13 @@ public:
     // write ids and vectors to disk
     std::ofstream f;
     f.open(name, std::ios_base::app);
-    int lineSize = sizeof(uuid) + sizeof(uint64_cu) + sizeof('\n');
+    int lineSize = sizeof(uuid) + sizeof(uint64_cu);
 
     char *buffer = (char *) malloc(numToAdd * lineSize);
 
     for (int i = 0; i < numToAdd; ++i) {
       memcpy(buffer + i * lineSize, &ids[i], 16);
       memcpy(buffer + i * lineSize + sizeof(uuid), &vectorsToAdd[i], 8);
-      memcpy(buffer + i * lineSize + sizeof(uuid) + sizeof(uint64_cu), "\n", 1);
     }
     printf("numToAdd: %d\n", numToAdd);
     f.write(buffer, numToAdd * lineSize);
