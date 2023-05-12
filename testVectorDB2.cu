@@ -21,11 +21,13 @@ int main(void) {
   using boost::uuids::uuid;
   using boost::uuids::random_generator;
 
+  const char *vdbName = "test.txt";
+
   // open vector db
-  VectorDB vdb("test.txt", 1 << 20);
+  VectorDB vdb(vdbName, 1 << 20);
 
   // generate random ids and vectors
-  int numVectors = 1 << 20;
+  int numVectors = 100;
   uuid *ids = (uuid *)malloc(numVectors * sizeof(uuid));
   uint64_cu *vectors = (uint64_cu *)malloc(numVectors * sizeof(uint64_cu));
   for (int i = 0; i < numVectors; ++i) {
@@ -54,6 +56,9 @@ int main(void) {
   }
 
   free(kNearestVectors);
+
+  // delete file
+  std::remove(vdbName);
 
   return 0;
 }
