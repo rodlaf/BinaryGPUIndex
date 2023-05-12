@@ -28,7 +28,7 @@ int main(void) {
   using boost::uuids::uuid;
 
   const char *vdbName = "test.txt";
-  int vdbCapacity = 1000;
+  int vdbCapacity = 5 << 20;
 
   // open vector db
   printf("Opening...\n");
@@ -41,7 +41,7 @@ int main(void) {
   // TODO: Do generation-insertion in batches, not just insertion
 
   // generate random ids and vectors
-  int numToAdd = 100;
+  int numToAdd = 50;
   // use heap since these arrays are huge
   printf("Generating..\n");
   t1 = high_resolution_clock::now();
@@ -60,12 +60,14 @@ int main(void) {
   t1 = high_resolution_clock::now();
   int chunkSize = 4 << 20;
   int numChunks = (numToAdd + chunkSize - 1) / chunkSize;
+  printf("numChunks: %d\n", numChunks);
   for (int i = 0; i < numChunks; ++i) {
     int start = i * chunkSize;
     int numInChunk = chunkSize;
     if (i == numChunks - 1) {
       numInChunk = numToAdd % chunkSize;
     }
+    printf("numInChunk: %d\n", numInChunk);
     vdb->insert(numInChunk, ids + start, vectorsToAdd + start);
   }
   t2 = high_resolution_clock::now();
@@ -110,6 +112,21 @@ int main(void) {
   printf("Done. Execution time: %ldms.\n", ms_int.count());
 
   // query again
+  printf("Querying again...\n");
+  t1 = high_resolution_clock::now();
+  vdb2->query(queryVector, k, kNearestDistances, kNearestVectors, kNearestIds);
+  t2 = high_resolution_clock::now();
+  ms_int = duration_cast<milliseconds>(t2 - t1);
+  printf("Done. Execution time: %ldms.\n", ms_int.count());
+
+  // print results
+  printf("Query: ");
+  printBits(queryVector);
+  for (int i = 0; i < k; ++i) {
+    printf("%d: %s %8.8f ", i, to_string(kNearestIds[i]).c_str(),
+           kNearestDistances[i]);
+    printBits(kNearestVectors[i]);
+  }
 
   // close second db
   delete vdb2;

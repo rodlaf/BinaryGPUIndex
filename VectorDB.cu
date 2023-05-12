@@ -56,11 +56,12 @@ private:
   std::unordered_map<unsigned, uuid> idMap;
 
 public:
-  int numVectors;
+  int numVectors = 0;
   const char *name;
 
   // TODO: Make capacity public variable and ensure that it matches the passed
   // variable of the same name if a database is being reopened
+  // OR rename capacity to size and make it a feature, kinda
   VectorDB(const char *nameParam, int capacity) {
     name = nameParam;
     
@@ -75,26 +76,48 @@ public:
     cudaMalloc(&vectors, capacity * sizeof(uint64_cu));
     cudaMalloc(&deviceQueryVector, sizeof(uint64_cu));
 
-    // Load vectors from db to device
-    numVectors = 0;
-    std::ifstream rf(name);
-    std::string str;
-    while (std::getline(rf, str)) {
-      // Get id
+    // Read vectors from file to device and idMap using a buffer
+    int bufferSize = 1 << 20;
+    uint64_cu *buffer = (uint64_cu *)malloc(bufferSize * sizeof(uint64_cu));
+    int bufferCount = 0;
+    auto flushBuffer = [&]() { 
+      printf("bufferCount: %d\n", bufferCount);
+      cudaMemcpy(vectors + numVectors, buffer, bufferCount * sizeof(uint64_cu), 
+                 cudaMemcpyHostToDevice);
+      numVectors += bufferCount;
+      bufferCount = 0;
+    };
+
+    std::ifstream f(name);
+    int lineSize = sizeof(uuid) + sizeof(uint64_cu) + sizeof('\n');
+    assert(lineSize == 25);
+    char *lineBuf = (char *) malloc(lineSize);
+
+    int lineCount = 0;
+    while (f.read(lineBuf, 25)) {
+      lineCount++;
+
+      // Get id and record in idMap
       uuid id;
-      memcpy(&id, str.c_str(), sizeof(uuid));
+      memcpy(&id, lineBuf, sizeof(uuid));
+      idMap[numVectors + bufferCount] = id;
 
-      // Get vector
-      uint64_cu vector; 
-      memcpy(&vector, str.c_str() + sizeof(uuid), sizeof(uint64_cu));
+      // Copy vector to buffer
+      memcpy(buffer + bufferCount, lineBuf + sizeof(uuid), sizeof(uint64_cu));
+      bufferCount++;
 
-      printf("%s ", to_string(id).c_str());
-      printBits(vector);
-
-      // Record id in idMap
-      idMap[numVectors] = id;
-      numVectors++;
+      // Flush buffer to device if full
+      if (bufferCount == bufferSize)
+        flushBuffer();
     }
+    printf("lineCount: %d\n", lineCount);
+
+    // Flush buffer
+    flushBuffer();
+
+    free(buffer);
+
+    printf("numVectors: %d\n", numVectors);
   }
 
   ~VectorDB() {
@@ -109,22 +132,22 @@ public:
   /*
     Inserts keys. Behaviour is undefined if ids already exist
   */
- // TODO: break into chunks
+ // TODO: Increase cuda mem here so no need for capacity variable?
   void insert(int numToAdd, uuid ids[], uint64_cu vectorsToAdd[]) {
     // write ids and vectors to disk
     std::ofstream f;
     f.open(name, std::ios_base::app);
     int lineSize = sizeof(uuid) + sizeof(uint64_cu) + sizeof('\n');
 
-    char *buffer = (char *)malloc(numToAdd * lineSize);
+    char *buffer = (char *) malloc(numToAdd * lineSize);
 
     for (int i = 0; i < numToAdd; ++i) {
       memcpy(buffer + i * lineSize, &ids[i], 16);
       memcpy(buffer + i * lineSize + sizeof(uuid), &vectorsToAdd[i], 8);
       memcpy(buffer + i * lineSize + sizeof(uuid) + sizeof(uint64_cu), "\n", 1);
     }
+    printf("numToAdd: %d\n", numToAdd);
     f.write(buffer, numToAdd * lineSize);
-
     f.close();
 
     // insert ids into keymap
@@ -152,6 +175,8 @@ public:
     cudaMalloc(&deviceKNearestDistances, k * sizeof(float));
     cudaMallocManaged(&deviceKNearestKeys, k * sizeof(unsigned));
     cudaMalloc(&deviceKNearestVectors, k * sizeof(uint64_cu));
+
+    printf("numVectors: %d\n", numVectors);
 
     // copy query vector to device
     cudaMemcpy(deviceQueryVector, &queryVector, sizeof(uint64_cu),
