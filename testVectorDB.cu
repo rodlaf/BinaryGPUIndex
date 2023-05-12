@@ -1,20 +1,11 @@
-#include <cstdio>
 #include <chrono>
+#include <cstdio>
 
 #include <boost/uuid/uuid.hpp>
 #include <boost/uuid/uuid_generators.hpp>
 #include <boost/uuid/uuid_io.hpp>
 
-#include "rocksdb/db.h"
-#include "rocksdb/options.h"
-#include "rocksdb/slice.h"
-
 #include "VectorDB.cu"
-
-// __host__ void printBits(uint64_cu &x) {
-//   std::bitset<sizeof(uint64_cu) * CHAR_BIT> b(x);
-//   std::cout << b << std::endl;
-// }
 
 // murmur64 hash function
 uint64_cu hash(uint64_cu h) {
@@ -32,56 +23,82 @@ int main(void) {
   using std::chrono::duration;
   using std::chrono::milliseconds;
 
-  const std::string vdbName = "/tmp/testdb";
-  int a10gCapacity = 1 << 20;
-  int numVectorsToInsert = 10000;
+  using boost::uuids::random_generator;
+  using boost::uuids::to_string;
+  using boost::uuids::uuid;
 
+  const char *vdbName = "test.txt";
+
+  // open vector db
+  printf("Opening...");
   auto t1 = high_resolution_clock::now();
-  VectorDB vdb(vdbName, a10gCapacity);
+  VectorDB vdb(vdbName, 950000000);
   auto t2 = high_resolution_clock::now();
+  auto ms_int = duration_cast<milliseconds>(t2 - t1);
+  printf(" Done. Execution time: %ldms.\n", ms_int.count());
 
-  duration<double, std::milli> ms_double = t2 - t1;
-  std::cout << ms_double.count() << "ms\n";
+  // TODO: Do generation-insertion in batches, not just insertion
 
-  // insert vectors
+  // generate random ids and vectors
+  int numToAdd = 50;
+  // use heap since these arrays are huge
+  printf("Generating...");
   t1 = high_resolution_clock::now();
-  for (int i = 0; i < numVectorsToInsert; ++i) {
-    // generate uuid as vector key
-    boost::uuids::uuid uuid = boost::uuids::random_generator()();
-    const std::string vKey = boost::uuids::to_string(uuid);
-
-    // generate random vector using hash function
-    uint64_cu data;
-    memcpy(&data, &uuid, 8);
-    uint64_cu v = hash(data);
-    
-    // insert vector
-    vdb.insert(vKey, v);
+  uuid *ids = (uuid *)malloc(numToAdd * sizeof(uuid));
+  uint64_cu *vectorsToAdd = (uint64_cu *)malloc(numToAdd * sizeof(uint64_cu));
+  for (int i = 0; i < numToAdd; ++i) {
+    ids[i] = random_generator()();
+    vectorsToAdd[i] = hash(~i);
   }
   t2 = high_resolution_clock::now();
-  ms_double = t2 - t1;
-  std::cout << ms_double.count() << "ms\n";
+  ms_int = duration_cast<milliseconds>(t2 - t1);
+  printf(" Done. Execution time: %ldms.\n", ms_int.count());
 
-  printf("numVectors: %d\n", vdb.numVectors);
+  // insert random ids and vectors
+  printf("Inserting...");
+  t1 = high_resolution_clock::now();
+  int chunkSize = 4 << 20;
+  int numChunks = (numToAdd + chunkSize - 1) / chunkSize;
+  for (int i = 0; i < numChunks; ++i) {
+    int start = i * chunkSize;
+    int numInChunk = chunkSize;
+    if (i == numChunks - 1) {
+      numInChunk = numToAdd % chunkSize;
+    }
+    vdb.insert(numInChunk, ids + start, vectorsToAdd + start);
+  }
+  t2 = high_resolution_clock::now();
+  ms_int = duration_cast<milliseconds>(t2 - t1);
+  printf(" Done. Execution time: %ldms.\n", ms_int.count());
+
+  free(ids);
+  free(vectorsToAdd);
 
   // query
   const int k = 10;
   uint64_cu queryVector = hash(~1);
-  uint64_cu *kNearestVectors = (uint64_cu *)malloc(k * sizeof(uint64_cu));
-  float *kNearestDistances = (float *)malloc(k * sizeof(float));
-  std::string kNearestVectorKeys[k];
+  uint64_cu kNearestVectors[k];
+  float kNearestDistances[k];
+  uuid kNearestIds[k];
 
-  vdb.query(&queryVector, k, kNearestDistances, kNearestVectors, kNearestVectorKeys);
+  printf("Querying...");
+  t1 = high_resolution_clock::now();
+  vdb.query(queryVector, k, kNearestDistances, kNearestVectors, kNearestIds);
+  t2 = high_resolution_clock::now();
+  ms_int = duration_cast<milliseconds>(t2 - t1);
+  printf(" Done. Execution time: %ldms.\n", ms_int.count());
 
   // print results
   printf("Query: ");
   printBits(queryVector);
   for (int i = 0; i < k; ++i) {
-    printf("%d: %s %8.8f ", i, kNearestVectorKeys[i].c_str(), kNearestDistances[i]);
+    printf("%d: %s %8.8f ", i, to_string(kNearestIds[i]).c_str(),
+           kNearestDistances[i]);
     printBits(kNearestVectors[i]);
   }
 
-  free(kNearestVectors);
+  // delete file
+  std::remove(vdbName);
 
   return 0;
 }

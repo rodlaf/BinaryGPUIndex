@@ -1,21 +1,11 @@
 #include <cstdio>
-
-#include "rocksdb/db.h"
-#include "rocksdb/options.h"
-#include "rocksdb/slice.h"
+#include <fstream>
+#include <string>
+#include <unordered_map>
 
 #include <thrust/sequence.h>
 
 #include "kNearestNeighbors.h"
-
-using ROCKSDB_NAMESPACE::DB;
-using ROCKSDB_NAMESPACE::Iterator;
-using ROCKSDB_NAMESPACE::Options;
-using ROCKSDB_NAMESPACE::PinnableSlice;
-using ROCKSDB_NAMESPACE::ReadOptions;
-using ROCKSDB_NAMESPACE::Status;
-using ROCKSDB_NAMESPACE::WriteBatch;
-using ROCKSDB_NAMESPACE::WriteOptions;
 
 // Design decision: Separate deviceKeys and vectorKeys.
 //
@@ -45,6 +35,10 @@ void printBits(uint64_cu &x) {
   std::cout << b << std::endl;
 }
 
+using boost::uuids::random_generator;
+using boost::uuids::to_string;
+using boost::uuids::uuid;
+
 class VectorDB {
 private:
   // Pointers to device memory
@@ -55,80 +49,35 @@ private:
   uint64_cu *deviceQueryVector;
   unsigned *deviceKeys; // sequential keys
 
-  // Use RocksDB as persistent key-value store
-  rocksdb::DB *db;
-
   // Use an in-memory hash map to keep track of deviceKey to vectorKey mappings
-  std::unordered_map<unsigned, std::string> keyMap;
+  std::unordered_map<unsigned, uuid> idMap;
 
 public:
   int numVectors;
+  const char *name;
 
   // TODO: Make capacity public variable and ensure that it matches the passed
   // variable of the same name if a database is being reopened
-  VectorDB(const std::string &name, int capacity) {
-    // ROCKSDB INITIALIZATION
-    // Open key value store or create it if it doesn't exist
-    Options options;
-    options.create_if_missing = true;
-    Status s = DB::Open(options, name, &db);
-    assert(s.ok());
+  VectorDB(const char *nameParam, int capacity) {
+    name = nameParam;
+    
+    // Allocate deviceKeys and initialize (initialization requires memory)
+    cudaMalloc(&deviceKeys, capacity * sizeof(unsigned));
+    thrust::sequence(thrust::device, deviceKeys, deviceKeys + capacity);
 
-    // Retrieve numVectors variable if it exists or initialize it if it doesn't
-    std::string value;
-    s = db->Get(ReadOptions(), "numVectors", &value);
-    if (s.IsNotFound()) {
-      s = db->Put(WriteOptions(), "numVectors", std::to_string(0));
-      assert(s.ok());
-      numVectors = 0;
-    } else {
-      assert(s.ok());
-      numVectors = std::stoi(value);
-    }
-
-    // CUDA INITIALIZATION
-    // Allocate all on-device memory
+    // Allocate rest of on-device memory
     cudaMalloc(&workingMem1, capacity * sizeof(unsigned));
     cudaMalloc(&workingMem2, capacity * sizeof(unsigned));
     cudaMalloc(&workingMem3, capacity * sizeof(unsigned));
-    cudaMallocManaged(&vectors, capacity * sizeof(uint64_cu));
-    cudaMallocManaged(&deviceQueryVector, sizeof(uint64_cu));
-    cudaMalloc(&deviceKeys, capacity * sizeof(unsigned));
-
-    // Initialize device keys
-    thrust::sequence(thrust::device, deviceKeys, deviceKeys + capacity);
+    cudaMalloc(&vectors, capacity * sizeof(uint64_cu));
+    cudaMalloc(&deviceQueryVector, sizeof(uint64_cu));
 
     // Load vectors from db to device
-    unsigned iterCount = 0;
-    Iterator *iter = db->NewIterator(ReadOptions());
-    iter->SeekToFirst();
-
-    uint64_cu *hostVectors =
-        (uint64_cu *)malloc(numVectors * sizeof(uint64_cu));
-    for (; iter->Valid(); iter->Next(), ++iterCount) {
-      assert(iterCount <= numVectors);
-
-      // TODO: use column families so we don't have to do this kind of checking
-      if (iter->key().ToString() != "numVectors") {
-        hostVectors[iterCount] = std::stoull(iter->value().ToString());
-
-        // keep track of vectorKey
-        // NOTE: TODO: Make very clear to reader of this code that 
-        // deviceKeys MUST be a sequential set of integers ([0, 1, 2, ...])
-        // given this is how we are keeping track of deviceKey-to-vectorKey
-        // mappings
-        keyMap[iterCount] = iter->key().ToString();
-      }
-    }
-    delete iter;
-    cudaMemcpy(vectors, hostVectors, numVectors * sizeof(uint64_cu),
-               cudaMemcpyHostToDevice);
-    free(hostVectors);
+    // TODO
+    numVectors = 0;
   }
 
   ~VectorDB() {
-    delete db;
-
     cudaFree(workingMem1);
     cudaFree(workingMem2);
     cudaFree(workingMem3);
@@ -138,44 +87,54 @@ public:
   }
 
   /*
-    Inserts new key. Panics if key already exists
+    Inserts keys. Behaviour is undefined if ids already exist
   */
-  void insert(const std::string &vectorKey, uint64_cu &vector) {
-    // NOTE: These two should eventually be made into a transaction
-    // Check if the vectorKey exists
-    std::string value;
-    Status getStatus = db->Get(ReadOptions(), vectorKey, &value);
-    assert(getStatus.IsNotFound());
+ // TODO: break into chunks
+  void insert(int numToAdd, uuid ids[], uint64_cu vectorsToAdd[]) {
+    // write ids and vectors to disk
+    std::ofstream f;
+    f.open(name, std::ios_base::app);
+    int lineSize = sizeof(uuid) + sizeof(uint64_cu) + sizeof('\n');
 
-    // Write to db and device
-    Status putStatus =
-        db->Put(WriteOptions(), vectorKey, std::to_string(vector));
-    assert(putStatus.ok());
-    cudaMemcpy(vectors + numVectors, &vector, sizeof(uint64_cu),
+    char *buffer = (char *)malloc(numToAdd * lineSize);
+
+    for (int i = 0; i < numToAdd; ++i) {
+      memcpy(buffer + i * lineSize, &ids[i], 16);
+      memcpy(buffer + i * lineSize + sizeof(uuid), &vectorsToAdd[i], 8);
+      memcpy(buffer + i * lineSize + sizeof(uuid) + sizeof(uint64_cu), "\n", 1);
+    }
+    f.write(buffer, numToAdd * lineSize);
+
+    f.close();
+
+    // insert ids into keymap
+    for (int i = 0; i < numToAdd; ++i) {
+      // TODO: Explain.
+      idMap[numVectors + i] = ids[i];
+    }
+
+    // copy vectors to device
+    cudaMemcpy(vectors + numVectors, vectorsToAdd, numToAdd * sizeof(uint64_cu),
                cudaMemcpyHostToDevice);
-    keyMap[(unsigned)numVectors] = vectorKey;
 
-    // Update numVectors
-    Status s =
-        db->Put(WriteOptions(), "numVectors", std::to_string(numVectors + 1));
-    assert(s.ok());
-    numVectors++;
+    // update numVectors
+    numVectors += numToAdd;
   }
 
   /*
-  
+
   */
-  void query(uint64_cu *queryVector, int k, float *kNearestDistances,
-             uint64_cu *kNearestVectors, std::string kNearestVectorKeys[]) {
+  void query(uint64_cu &queryVector, int k, float kNearestDistances[],
+             uint64_cu kNearestVectors[], uuid kNearestIds[]) {
     float *deviceKNearestDistances;
     unsigned *deviceKNearestKeys;
     uint64_cu *deviceKNearestVectors;
-    cudaMallocManaged(&deviceKNearestDistances, k * sizeof(float));
+    cudaMalloc(&deviceKNearestDistances, k * sizeof(float));
     cudaMallocManaged(&deviceKNearestKeys, k * sizeof(unsigned));
     cudaMalloc(&deviceKNearestVectors, k * sizeof(uint64_cu));
 
     // copy query vector to device
-    cudaMemcpy(deviceQueryVector, queryVector, sizeof(uint64_cu),
+    cudaMemcpy(deviceQueryVector, &queryVector, sizeof(uint64_cu),
                cudaMemcpyHostToDevice);
 
     kNearestNeighbors(vectors, deviceKeys, deviceQueryVector, numVectors, k,
@@ -193,7 +152,7 @@ public:
     cudaMemcpy(kNearestVectors, deviceKNearestVectors, k * sizeof(uint64_cu),
                cudaMemcpyDeviceToHost);
     for (int i = 0; i < k; ++i)
-      kNearestVectorKeys[i] = keyMap[deviceKNearestKeys[i]];
+      kNearestIds[i] = idMap[deviceKNearestKeys[i]];
 
     cudaFree(deviceKNearestDistances);
     cudaFree(deviceKNearestKeys);
