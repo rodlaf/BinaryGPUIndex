@@ -1,5 +1,5 @@
-#include <cstdio>
 #include <chrono>
+#include <cstdio>
 
 #include <boost/uuid/uuid.hpp>
 #include <boost/uuid/uuid_generators.hpp>
@@ -18,8 +18,9 @@ uint64_cu hash(uint64_cu h) {
 }
 
 int main(void) {
-  using boost::uuids::uuid;
   using boost::uuids::random_generator;
+  using boost::uuids::to_string;
+  using boost::uuids::uuid;
 
   const char *vdbName = "test.txt";
 
@@ -27,16 +28,16 @@ int main(void) {
   VectorDB vdb(vdbName, 1 << 20);
 
   // generate random ids and vectors
-  int numVectors = 100;
-  uuid *ids = (uuid *)malloc(numVectors * sizeof(uuid));
-  uint64_cu *vectors = (uint64_cu *)malloc(numVectors * sizeof(uint64_cu));
-  for (int i = 0; i < numVectors; ++i) {
+  int numToAdd = 100;
+  uuid ids[numToAdd];
+  uint64_cu vectorsToAdd[numToAdd];
+  for (int i = 0; i < numToAdd; ++i) {
     ids[i] = random_generator()();
-    vectors[i] = hash(~i);
+    vectorsToAdd[i] = hash(~i);
   }
 
   // insert random ids and vectors
-  vdb.insert(numVectors, ids, vectors);
+  vdb.insert(numToAdd, ids, vectorsToAdd);
 
   // query
   const int k = 10;
@@ -45,13 +46,14 @@ int main(void) {
   float kNearestDistances[k];
   uuid kNearestIds[k];
 
-  vdb.query(&queryVector, k, kNearestDistances, kNearestVectors, kNearestIds);
+  vdb.query(queryVector, k, kNearestDistances, kNearestVectors, kNearestIds);
 
   // print results
   printf("Query: ");
   printBits(queryVector);
   for (int i = 0; i < k; ++i) {
-    printf("%d: %s %8.8f ", i, boost::uuids::to_string(kNearestIds[i]).c_str(), kNearestDistances[i]);
+    printf("%d: %s %8.8f ", i, to_string(kNearestIds[i]).c_str(),
+           kNearestDistances[i]);
     printBits(kNearestVectors[i]);
   }
 

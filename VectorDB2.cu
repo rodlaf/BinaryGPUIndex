@@ -88,7 +88,7 @@ public:
   /*
     Inserts keys. Behaviour is undefined if ids already exist
   */
-  void insert(int numToAdd, uuid *ids, uint64_cu *vectorsToAdd) {
+  void insert(int numToAdd, uuid ids[], uint64_cu vectorsToAdd[]) {
     // write ids and vectors to disk
     std::ofstream f;
     f.open(name, std::ios_base::app);
@@ -118,7 +118,7 @@ public:
   /*
 
   */
-  void query(uint64_cu *queryVector, int k, float kNearestDistances[],
+  void query(uint64_cu &queryVector, int k, float kNearestDistances[],
              uint64_cu kNearestVectors[], uuid kNearestIds[]) {
     float *deviceKNearestDistances;
     unsigned *deviceKNearestKeys;
@@ -128,7 +128,7 @@ public:
     cudaMalloc(&deviceKNearestVectors, k * sizeof(uint64_cu));
 
     // copy query vector to device
-    cudaMemcpy(deviceQueryVector, queryVector, sizeof(uint64_cu),
+    cudaMemcpy(deviceQueryVector, &queryVector, sizeof(uint64_cu),
                cudaMemcpyHostToDevice);
 
     kNearestNeighbors(vectors, deviceKeys, deviceQueryVector, numVectors, k,
