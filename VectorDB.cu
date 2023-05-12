@@ -77,7 +77,7 @@ public:
     cudaMalloc(&deviceQueryVector, sizeof(uint64_cu));
 
     // Read vectors from file to device and idMap using a buffer
-    int bufferSize = 1 << 20;
+    int bufferSize = 4 << 20;
     uint64_cu *buffer = (uint64_cu *)malloc(bufferSize * sizeof(uint64_cu));
     int bufferCount = 0;
     auto flushBuffer = [&]() { 
@@ -140,7 +140,6 @@ public:
     int lineSize = sizeof(uuid) + sizeof(uint64_cu);
 
     char *buffer = (char *) malloc(numToAdd * lineSize);
-
     for (int i = 0; i < numToAdd; ++i) {
       memcpy(buffer + i * lineSize, &ids[i], 16);
       memcpy(buffer + i * lineSize + sizeof(uuid), &vectorsToAdd[i], 8);
@@ -148,6 +147,7 @@ public:
     printf("numToAdd: %d\n", numToAdd);
     f.write(buffer, numToAdd * lineSize);
     f.close();
+    free(buffer);
 
     // insert ids into keymap
     for (int i = 0; i < numToAdd; ++i) {

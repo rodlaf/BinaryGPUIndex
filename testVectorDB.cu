@@ -28,7 +28,8 @@ int main(void) {
   using boost::uuids::uuid;
 
   const char *vdbName = "test.txt";
-  int vdbCapacity = 5 << 20;
+  int vdbCapacity = 950000000;
+  int numToInsert = 500000000;
 
   // open vector db
   printf("Opening...\n");
@@ -39,40 +40,32 @@ int main(void) {
   printf("Done. Execution time: %ldms.\n", ms_int.count());
 
   // TODO: Do generation-insertion in batches, not just insertion
+  int batchSize = 4 << 20;
+  int numBatches = (numToInsert + batchSize - 1) / batchSize;
 
-  // generate random ids and vectors
-  int numToAdd = 3500000;
   // use heap since these arrays are huge
-  printf("Generating..\n");
-  t1 = high_resolution_clock::now();
-  uuid *ids = (uuid *)malloc(numToAdd * sizeof(uuid));
-  uint64_cu *vectorsToAdd = (uint64_cu *)malloc(numToAdd * sizeof(uint64_cu));
-  for (int i = 0; i < numToAdd; ++i) {
-    ids[i] = random_generator()();
-    vectorsToAdd[i] = hash(~i);
-  }
-  t2 = high_resolution_clock::now();
-  ms_int = duration_cast<milliseconds>(t2 - t1);
-  printf("Done. Execution time: %ldms.\n", ms_int.count());
+  uuid *ids = (uuid *) malloc(batchSize * sizeof(uuid));
+  uint64_cu *vectorsToAdd = (uint64_cu *) malloc(batchSize * sizeof(uint64_cu));
 
-  // insert random ids and vectors
-  printf("Inserting...\n");
-  t1 = high_resolution_clock::now();
-  int chunkSize = 4 << 20;
-  int numChunks = (numToAdd + chunkSize - 1) / chunkSize;
-  printf("numChunks: %d\n", numChunks);
-  for (int i = 0; i < numChunks; ++i) {
-    int start = i * chunkSize;
-    int numInChunk = chunkSize;
-    if (i == numChunks - 1) {
-      numInChunk = numToAdd % chunkSize;
+  for (int batch = 0; batch < numBatches; ++batch) {
+    // Adjust batch size if last batch
+    if (batch == numBatches - 1)
+      batchSize = numToInsert % batchSize;
+
+    printf("Generating and inserting (%d\\%d)...\n", batch, numBatches);
+    t1 = high_resolution_clock::now();
+
+    for (int i = 0; i < batchSize; ++i) {
+      ids[i] = random_generator()();
+      vectorsToAdd[i] = hash(~(batch * i));
     }
-    // printf("numInChunk: %d\n", numInChunk);
-    vdb->insert(numInChunk, ids + start, vectorsToAdd + start);
+
+    vdb->insert(batchSize, ids, vectorsToAdd);
+
+    t2 = high_resolution_clock::now();
+    ms_int = duration_cast<milliseconds>(t2 - t1);
+    printf("Done. Execution time: %ldms.\n", ms_int.count());
   }
-  t2 = high_resolution_clock::now();
-  ms_int = duration_cast<milliseconds>(t2 - t1);
-  printf("Done. Execution time: %ldms.\n", ms_int.count());
 
   free(ids);
   free(vectorsToAdd);
