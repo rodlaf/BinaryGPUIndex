@@ -37,23 +37,42 @@ int main(void) {
   auto ms_int = duration_cast<milliseconds>(t2 - t1);
   printf(" Done. Execution time: %ldms.\n", ms_int.count());
 
+  // TODO: Do generation-insertion in batches, not just insertion
+
   // generate random ids and vectors
-  int numToAdd = 1 << 20;
+  int numToAdd = 200000000;
   // use heap since these arrays are huge
+  printf("Generating...");
+  t1 = high_resolution_clock::now();
   uuid *ids = (uuid *)malloc(numToAdd * sizeof(uuid));
   uint64_cu *vectorsToAdd = (uint64_cu *)malloc(numToAdd * sizeof(uint64_cu));
   for (int i = 0; i < numToAdd; ++i) {
     ids[i] = random_generator()();
     vectorsToAdd[i] = hash(~i);
   }
+  t2 = high_resolution_clock::now();
+  ms_int = duration_cast<milliseconds>(t2 - t1);
+  printf(" Done. Execution time: %ldms.\n", ms_int.count());
 
   // insert random ids and vectors
   printf("Inserting...");
   t1 = high_resolution_clock::now();
-  vdb.insert(numToAdd, ids, vectorsToAdd);
+  int chunkSize = 4 << 20;
+  int numChunks = (numToAdd + chunkSize - 1) / chunkSize;
+  for (int i = 0; i < numChunks; ++i) {
+    int start = i * chunkSize;
+    int numInChunk = chunkSize;
+    if (i == numChunks - 1) {
+      numInChunk = numToAdd % chunkSize;
+    }
+    vdb.insert(numInChunk, ids + start, vectorsToAdd + start);
+  }
   t2 = high_resolution_clock::now();
   ms_int = duration_cast<milliseconds>(t2 - t1);
   printf(" Done. Execution time: %ldms.\n", ms_int.count());
+
+  free(ids);
+  free(vectorsToAdd);
 
   // query
   const int k = 10;

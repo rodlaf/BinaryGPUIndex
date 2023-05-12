@@ -89,23 +89,28 @@ public:
   /*
     Inserts keys. Behaviour is undefined if ids already exist
   */
+ // TODO: break into chunks
   void insert(int numToAdd, uuid ids[], uint64_cu vectorsToAdd[]) {
     // write ids and vectors to disk
     std::ofstream f;
     f.open(name, std::ios_base::app);
     int lineSize = sizeof(uuid) + sizeof(uint64_cu) + sizeof('\n');
+
     char *buffer = (char *)malloc(numToAdd * lineSize);
+
     for (int i = 0; i < numToAdd; ++i) {
       memcpy(buffer + i * lineSize, &ids[i], 16);
       memcpy(buffer + i * lineSize + sizeof(uuid), &vectorsToAdd[i], 8);
       memcpy(buffer + i * lineSize + sizeof(uuid) + sizeof(uint64_cu), "\n", 1);
     }
     f.write(buffer, numToAdd * lineSize);
+
     f.close();
 
     // insert ids into keymap
     for (int i = 0; i < numToAdd; ++i) {
-      idMap[i] = ids[i];
+      // TODO: Explain.
+      idMap[numVectors + i] = ids[i];
     }
 
     // copy vectors to device
