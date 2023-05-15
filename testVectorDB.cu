@@ -29,7 +29,7 @@ int main(void) {
 
   const char *vdbName = "test.txt";
   int vdbCapacity = 950000000;
-  int numToInsert = 500000000;
+  int numToInsert = 100;
 
   // open vector db
   printf("Opening...\n");
@@ -57,7 +57,8 @@ int main(void) {
 
     for (int i = 0; i < batchSize; ++i) {
       ids[i] = random_generator()();
-      vectorsToAdd[i] = hash(~(batch * i));
+      vectorsToAdd[i] = hash((batch + 1) * (i + 1));
+      printBits(vectorsToAdd[i]);
     }
 
     vdb->insert(batchSize, ids, vectorsToAdd);
