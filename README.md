@@ -48,9 +48,9 @@ shown below.
     9: c4ddbfa8-8937-4bf5-a345-5f919119713d 0.18829232 0011101011010101110110111010000011111100110111011110010000111011
 
 
-## VectorDB 🚧
+## DeviceIndex 🚧
 
-VectorDB is the class representing the database. VectorDB has only two methods:
+DeviceIndex is the class representing the database. DeviceIndex has only two methods:
 
 1. Insert
 
