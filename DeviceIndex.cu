@@ -3,6 +3,9 @@
 #include <string>
 #include <unordered_map>
 
+#include <boost/uuid/uuid.hpp>
+#include <boost/uuid/uuid_generators.hpp>
+#include <boost/uuid/uuid_io.hpp>
 #include <thrust/sequence.h>
 
 #include "kNearestNeighbors.h"
@@ -81,7 +84,6 @@ public:
     uint64_cu *buffer = (uint64_cu *)malloc(bufferSize * sizeof(uint64_cu));
     int bufferCount = 0;
     auto flushBuffer = [&]() { 
-      // printf("bufferCount: %d\n", bufferCount);
       cudaMemcpy(vectors + numVectors, buffer, bufferCount * sizeof(uint64_cu), 
                  cudaMemcpyHostToDevice);
       numVectors += bufferCount;
@@ -110,14 +112,9 @@ public:
       if (bufferCount == bufferSize)
         flushBuffer();
     }
-    printf("lineCount: %d\n", lineCount);
-
-    // Flush buffer
     flushBuffer();
 
     free(buffer);
-
-    printf("numVectors: %d\n", numVectors);
   }
 
   ~DeviceIndex() {
@@ -144,7 +141,6 @@ public:
       memcpy(buffer + i * lineSize, &ids[i], 16);
       memcpy(buffer + i * lineSize + sizeof(uuid), &vectorsToAdd[i], 8);
     }
-    printf("numToAdd: %d\n", numToAdd);
     f.write(buffer, numToAdd * lineSize);
     f.close();
     free(buffer);
@@ -174,8 +170,6 @@ public:
     cudaMalloc(&deviceKNearestDistances, k * sizeof(float));
     cudaMallocManaged(&deviceKNearestKeys, k * sizeof(unsigned));
     cudaMalloc(&deviceKNearestVectors, k * sizeof(uint64_cu));
-
-    printf("numVectors: %d\n", numVectors);
 
     // copy query vector to device
     cudaMemcpy(deviceQueryVector, &queryVector, sizeof(uint64_cu),

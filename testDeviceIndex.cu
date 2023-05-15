@@ -1,10 +1,6 @@
 #include <chrono>
 #include <cstdio>
 
-#include <boost/uuid/uuid.hpp>
-#include <boost/uuid/uuid_generators.hpp>
-#include <boost/uuid/uuid_io.hpp>
-
 #include "DeviceIndex.cu"
 
 // murmur64 hash function

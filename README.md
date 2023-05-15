@@ -6,6 +6,11 @@ While this implementation can only support 64-bit binary vector, it can be exten
 
 In addition to supporting only 64-bit binary vectors, the only vector key, or ID, is a 16-byte UUID. Again, this was chosen for simplicity and speed of implementation. Support for arbitrarily-sized string as vector keys can be implemented easily.
 
+## Dependencies
+
+- Cuda 12.0
+- Crow 1.0
+
 ## Benchmark 
 
 The results of simple benchmark on a single query of half a billion vectors is 
