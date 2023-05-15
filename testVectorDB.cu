@@ -18,9 +18,9 @@ uint64_cu hash(uint64_cu h) {
 }
 
 int main(void) {
-  using std::chrono::high_resolution_clock;
-  using std::chrono::duration_cast;
   using std::chrono::duration;
+  using std::chrono::duration_cast;
+  using std::chrono::high_resolution_clock;
   using std::chrono::milliseconds;
 
   using boost::uuids::random_generator;
@@ -44,8 +44,8 @@ int main(void) {
   int numBatches = (numToInsert + batchSize - 1) / batchSize;
 
   // use heap since these arrays are huge
-  uuid *ids = (uuid *) malloc(batchSize * sizeof(uuid));
-  uint64_cu *vectorsToAdd = (uint64_cu *) malloc(batchSize * sizeof(uint64_cu));
+  uuid *ids = (uuid *)malloc(batchSize * sizeof(uuid));
+  uint64_cu *vectorsToAdd = (uint64_cu *)malloc(batchSize * sizeof(uint64_cu));
 
   for (int batch = 0; batch < numBatches; ++batch) {
     // Adjust batch size if last batch
@@ -58,7 +58,6 @@ int main(void) {
     for (int i = 0; i < batchSize; ++i) {
       ids[i] = random_generator()();
       vectorsToAdd[i] = hash((batch + 1) * (i + 1));
-      printBits(vectorsToAdd[i]);
     }
 
     vdb->insert(batchSize, ids, vectorsToAdd);
@@ -89,8 +88,8 @@ int main(void) {
   printf("Query: ");
   printBits(queryVector);
   for (int i = 0; i < k; ++i) {
-    printf("%d: %s %8.8f ", i, to_string(kNearestIds[i]).c_str(),
-           kNearestDistances[i]);
+    printf("%d: %8.8f %s ", i, kNearestDistances[i],
+           to_string(kNearestIds[i]).c_str());
     printBits(kNearestVectors[i]);
   }
 
@@ -117,8 +116,8 @@ int main(void) {
   printf("Query: ");
   printBits(queryVector);
   for (int i = 0; i < k; ++i) {
-    printf("%d: %s %8.8f ", i, to_string(kNearestIds[i]).c_str(),
-           kNearestDistances[i]);
+    printf("%d: %8.8f %s ", i, kNearestDistances[i],
+           to_string(kNearestIds[i]).c_str());
     printBits(kNearestVectors[i]);
   }
 
