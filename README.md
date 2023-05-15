@@ -1,15 +1,28 @@
-# GPU Accelerated Vector Database
+# GPU Accelerated Vector Index
 
-A Proof-of-Concept vector database that supports insertion and K Nearest Neighbors search. The only supported vector is a 64-bit binary vector for simplicity of implementation and usage of space.
+A proof of concept vector index that supports insertion and k-nearest-neighbors querying. The index is implemented as DeviceIndex in `DeviceIndex.cu` and a simple web server that allows insertions and queries over a network is implemented in `server.cu`.
 
-While this implementation can only support 64-bit binary vector, it can be extended to support any vector type, including vectors of non-binary elements such as floating point values. Such an extension would not require any alteration to the existing radix select implementation, only to the computation of distances.
+While this implementation can only support 64-bit binary vectors, it can be extended to support any vector type including vectors of non-binary elements such as floating point values. Such an extension would only change the way in which distances are computed between vectors and not the way in which those distances are ranked (e.g., radix select).
 
-In addition to supporting only 64-bit binary vectors, the only vector key, or ID, is a 16-byte UUID. Again, this was chosen for simplicity and speed of implementation. Support for arbitrarily-sized string as vector keys can be implemented easily.
+Vectors must be inserted along with an UUID. This index can be extended to support other types of vector keys, including arbitrarily-sized strings. UUIDs were chosen for their frequent use and because on a technical level, it was easier to store them given they are of constant length.
 
 ## Dependencies
 
-- Cuda 12.0
-- Crow 1.0
+- Cuda Toolkit 11.0+
+- Crow 1.0+
+
+## Usage
+
+The implementation can be tested without use of a network by running
+
+    nvcc testDeviceIndex.cu
+    ./a.out
+
+This test will generate random vectors using a hash function and insert them 
+into a new DeviceIndex. A query will be made, and then the DeviceIndex will 
+be deleted. Following this, a new, different DeviceIndex will be made using the
+file created by the old one. The same query as before will be made, and the 
+results will be shown to test that they are equal. 
 
 ## Benchmark 
 
