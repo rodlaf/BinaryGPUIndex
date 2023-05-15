@@ -39,7 +39,7 @@ using boost::uuids::random_generator;
 using boost::uuids::to_string;
 using boost::uuids::uuid;
 
-class VectorDB {
+class DeviceIndex {
 private:
   // Pointers to device memory
   unsigned *workingMem1;
@@ -62,7 +62,7 @@ public:
   // TODO: Make capacity public variable and ensure that it matches the passed
   // variable of the same name if a database is being reopened
   // OR rename capacity to size and make it a feature, kinda
-  VectorDB(const char *nameParam, int capacity) {
+  DeviceIndex(const char *nameParam, int capacity) {
     name = nameParam;
     
     // Allocate deviceKeys and initialize (initialization requires memory)
@@ -120,7 +120,7 @@ public:
     printf("numVectors: %d\n", numVectors);
   }
 
-  ~VectorDB() {
+  ~DeviceIndex() {
     cudaFree(workingMem1);
     cudaFree(workingMem2);
     cudaFree(workingMem3);

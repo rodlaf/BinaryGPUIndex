@@ -5,7 +5,7 @@
 #include <boost/uuid/uuid_generators.hpp>
 #include <boost/uuid/uuid_io.hpp>
 
-#include "VectorDB.cu"
+#include "DeviceIndex.cu"
 
 // murmur64 hash function
 uint64_cu hash(uint64_cu h) {
@@ -34,7 +34,7 @@ int main(void) {
   // open vector db
   printf("Opening...\n");
   auto t1 = high_resolution_clock::now();
-  VectorDB *vdb = new VectorDB(vdbName, vdbCapacity);
+  DeviceIndex *vdb = new DeviceIndex(vdbName, vdbCapacity);
   auto t2 = high_resolution_clock::now();
   auto ms_int = duration_cast<milliseconds>(t2 - t1);
   printf("Done. Execution time: %ldms.\n", ms_int.count());
@@ -99,7 +99,7 @@ int main(void) {
   // reopen
   printf("Reopening...\n");
   t1 = high_resolution_clock::now();
-  VectorDB *vdb2 = new VectorDB(vdbName, vdbCapacity);
+  DeviceIndex *vdb2 = new DeviceIndex(vdbName, vdbCapacity);
   t2 = high_resolution_clock::now();
   ms_int = duration_cast<milliseconds>(t2 - t1);
   printf("Done. Execution time: %ldms.\n", ms_int.count());
