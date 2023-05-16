@@ -84,9 +84,8 @@ int main() {
         }
 
         // insert ids and vectors into index
-        std::future<void> future = std::async(std::launch::deferred, std::bind(&DeviceIndex::insert, index, numToInsert, ids, vectors));
-        future.wait();
-        future.get();
+        index->insert(numToInsert, ids, vectors);
+
         printf("%d vectors inserted.\n", numToInsert);
 
         free(ids);
@@ -122,25 +121,21 @@ int main() {
 
         // Query index
         // auto future1 = std::async(std::launch::deferred, std::bind(&DeviceIndex::query, index, vector, topK, kNearestDistances, kNearestVectors, kNearestIds));
-        std::future<void> future = std::async(std::launch::deferred, std::bind(&DeviceIndex::query, index, vector, topK, kNearestDistances, kNearestVectors, kNearestIds));
-        future.wait();
-        future.get();
+        index->query(vector, topK, kNearestDistances, kNearestVectors, kNearestIds);
 
         crow::json::wvalue response({});
 
         for (int i = 0; i < topK; ++i) {
-          // std::cout << std::to_string(kNearestDistances[i]) << std::endl;
-          // response["matches"][i]["id"] =
-          //     to_string(kNearestIds[i]);
-
-
-          // response["matches"][i]["distance"] =
-          //     std::to_string(kNearestDistances[i]);
+          response["matches"][i]["id"] =
+              to_string(kNearestIds[i]);
+          response["matches"][i]["distance"] =
+              std::to_string(kNearestDistances[i]);
 
           printf("kNearestDistances[%d]: %f\n", i, kNearestDistances[i]);
           printf("kNearestIds[%d]: %s\n", i, to_string(kNearestIds[i]).c_str());
           char *str = (char *)malloc(64);
-          printf("kNearestVectors[%d]: %s\n", i, ulltostr(kNearestVectors[i], 2, str, false));
+          printf("kNearestVectors[%d]: ", i);
+          printBits(kNearestVectors[i]);
         }
 
         return crow::response{response};
@@ -148,7 +143,7 @@ int main() {
 
   // Run server
   printf("Server is running on port %d.\n", port);
-  app.port(port).multithreaded().run();
+  app.port(port).run();
 
   std::remove(indexName);
 
