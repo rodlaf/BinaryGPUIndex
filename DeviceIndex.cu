@@ -1,7 +1,9 @@
+#include <iostream>
 #include <cstdio>
 #include <fstream>
 #include <string>
 #include <unordered_map>
+#include <bitset>
 
 #include <boost/uuid/uuid.hpp>
 #include <boost/uuid/uuid_generators.hpp>
@@ -76,7 +78,7 @@ public:
     cudaMalloc(&workingMem1, capacity * sizeof(unsigned));
     cudaMalloc(&workingMem2, capacity * sizeof(unsigned));
     cudaMalloc(&workingMem3, capacity * sizeof(unsigned));
-    cudaMalloc(&vectors, capacity * sizeof(uint64_cu));
+    cudaMallocManaged(&vectors, capacity * sizeof(uint64_cu));
     cudaMalloc(&deviceQueryVector, sizeof(uint64_cu));
 
     // Read vectors from file to device and idMap using a buffer
@@ -98,6 +100,8 @@ public:
     int lineCount = 0;
     while (f.read(lineBuf, lineSize)) {
       lineCount++;
+      // TODO: implement upsert and not just insert here. Have defined behavior
+      // if id already exists
 
       // Get id and record in idMap
       uuid id;
@@ -170,6 +174,11 @@ public:
     cudaMalloc(&deviceKNearestDistances, k * sizeof(float));
     cudaMallocManaged(&deviceKNearestKeys, k * sizeof(unsigned));
     cudaMalloc(&deviceKNearestVectors, k * sizeof(uint64_cu));
+
+    // printf("numVectors: %d\n", numVectors);
+    for (int i = 0; i < numVectors; ++i) {
+      printBits(vectors[i]);
+    }
 
     // copy query vector to device
     cudaMemcpy(deviceQueryVector, &queryVector, sizeof(uint64_cu),

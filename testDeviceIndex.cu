@@ -25,7 +25,7 @@ int main(void) {
 
   const char *vdbName = "test.txt";
   int vdbCapacity = 950000000;
-  int numToInsert = 100;
+  int numToInsert = 3;
 
   // open vector db
   printf("Opening...\n");
@@ -67,7 +67,7 @@ int main(void) {
   free(vectorsToAdd);
 
   // query
-  const int k = 10;
+  const int k = 2;
   uint64_cu queryVector = hash(~1);
   uint64_cu kNearestVectors[k];
   float kNearestDistances[k];
