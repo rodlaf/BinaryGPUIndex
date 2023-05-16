@@ -1,16 +1,16 @@
+#include <array>
+#include <chrono>
 #include <cstdio>
 #include <cstdlib>
+#include <utility>
+
+#include <boost/lexical_cast.hpp>
+#include <boost/uuid/random_generator.hpp>
+#include <boost/uuid/uuid.hpp>
+#include <boost/uuid/uuid_io.hpp>
 
 #include "DeviceIndex.cu"
 #include "crow.h"
-
-#include <chrono>
-#include <utility>
-
-#include <boost/uuid/uuid.hpp>
-#include <boost/uuid/uuid_io.hpp>
-#include <boost/uuid/random_generator.hpp>
-#include <boost/lexical_cast.hpp>
 
 using namespace boost::uuids;
 
@@ -20,6 +20,7 @@ int main() {
   int port = 80;
 
   crow::SimpleApp app;
+  app.loglevel(crow::LogLevel::Warning);
 
   // Open index
   printf("Opening index...\n");
@@ -27,25 +28,43 @@ int main() {
   printf("Done.\n");
 
   CROW_ROUTE(app, "/insert")
-      .methods("POST"_method)([](const crow::request &req) {
+      .methods("POST"_method)([&](const crow::request &req) {
         auto x = crow::json::load(req.body);
 
-        if (!x)
+        if (!x["vectors"])
           return crow::response(crow::status::BAD_REQUEST);
-        
-        std::string idString = x["id"].s();
-        std::string vectorString = x["vector"].s();
 
-        uuid id = boost::lexical_cast<uuid>(idString);
-        // convert string of 0s and 1s to uint64_cu vector
-        uint64_cu vector = strtoull(vectorString.c_str(), NULL, 2);
+        int numToInsert = x["vectors"].size();
 
-        std::cout << id << std::endl;
-        printBits(vector);
+        uuid *ids = (uuid *)malloc(numToInsert * sizeof(uuid));
+        uint64_cu *vectors =
+            (uint64_cu *)malloc(numToInsert * sizeof(uint64_cu));
 
-        return crow::response{crow::status::OK};
+        // Retrieve ids and vectors
+        for (int i = 0; i < numToInsert; ++i) {
+          std::string idString = x["vectors"][i]["id"].s();
+          std::string vectorString = x["vectors"][i]["values"].s();
+
+          uuid id = boost::lexical_cast<uuid>(idString);
+          uint64_cu vector = strtoull(vectorString.c_str(), NULL, 2);
+
+          ids[i] = id;
+          vectors[i] = vector;
+        }
+
+        free(ids);
+        free(vectors);
+
+        // insert ids and vectors into index
+        index->insert(numToInsert, ids, vectors);
+
+        crow::json::wvalue response(
+            {{"insertedCount", std::to_string(numToInsert)}});
+
+        return crow::response{response};
       });
 
+  printf("Server is running on port %d.\n", port);
   app.port(port).multithreaded().run();
 
   // Close index
