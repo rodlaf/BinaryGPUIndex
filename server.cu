@@ -18,28 +18,8 @@
 
 using namespace boost::uuids;
 
-char *ulltostr(unsigned long long x, int base, char *str, int is_uppercase)
-{
-  size_t i, len; 
-  if(x != 0) {
-    char a_c = (is_uppercase ? 'A' : 'a');
-    for(i = 0; x != 0; i++) {
-      unsigned digit = x % base;
-      x /= base;
-      str[i] = (digit < 10 ? digit + '0' : digit + a_c - 10);
-    }
-    len = i;
-  } else {
-    str[0] = '0';
-    len = 1;
-  }
-  for(i = 0; i < len >> 1; i++) {
-    char tmp_c = str[i];
-    str[i] = str[len - i - 1];
-    str[len - i - 1] = tmp_c;
-  }
-  str[len] = 0;
-  return str;
+std::string vectorToString(uint64_cu vector){
+  return std::bitset<64>(vector).to_string();
 }
 
 int main() {
@@ -79,14 +59,10 @@ int main() {
 
           ids[i] = id;
           vectors[i] = vector;
-
-          printBits(vectors[i]);
         }
 
         // insert ids and vectors into index
         index->insert(numToInsert, ids, vectors);
-
-        printf("%d vectors inserted.\n", numToInsert);
 
         free(ids);
         free(vectors);
@@ -120,7 +96,6 @@ int main() {
         uuid *kNearestIds = (uuid *)malloc(topK * sizeof(uuid));
 
         // Query index
-        // auto future1 = std::async(std::launch::deferred, std::bind(&DeviceIndex::query, index, vector, topK, kNearestDistances, kNearestVectors, kNearestIds));
         index->query(vector, topK, kNearestDistances, kNearestVectors, kNearestIds);
 
         crow::json::wvalue response({});
@@ -130,12 +105,8 @@ int main() {
               to_string(kNearestIds[i]);
           response["matches"][i]["distance"] =
               std::to_string(kNearestDistances[i]);
-
-          printf("kNearestDistances[%d]: %f\n", i, kNearestDistances[i]);
-          printf("kNearestIds[%d]: %s\n", i, to_string(kNearestIds[i]).c_str());
-          char *str = (char *)malloc(64);
-          printf("kNearestVectors[%d]: ", i);
-          printBits(kNearestVectors[i]);
+          response["matches"][i]["values"] =
+              vectorToString(kNearestVectors[i]);
         }
 
         return crow::response{response};
@@ -144,8 +115,6 @@ int main() {
   // Run server
   printf("Server is running on port %d.\n", port);
   app.port(port).run();
-
-  std::remove(indexName);
 
   // Close index
   delete index;

@@ -78,7 +78,7 @@ public:
     cudaMalloc(&workingMem1, capacity * sizeof(unsigned));
     cudaMalloc(&workingMem2, capacity * sizeof(unsigned));
     cudaMalloc(&workingMem3, capacity * sizeof(unsigned));
-    cudaMallocManaged(&vectors, capacity * sizeof(uint64_cu));
+    cudaMalloc(&vectors, capacity * sizeof(uint64_cu));
     cudaMalloc(&deviceQueryVector, sizeof(uint64_cu));
 
     // Read vectors from file to device and idMap using a buffer
@@ -176,9 +176,9 @@ public:
     cudaMalloc(&deviceKNearestVectors, k * sizeof(uint64_cu));
 
     // printf("numVectors: %d\n", numVectors);
-    for (int i = 0; i < numVectors; ++i) {
-      printBits(vectors[i]);
-    }
+    // for (int i = 0; i < numVectors; ++i) {
+    //   printBits(vectors[i]);
+    // }
 
     // copy query vector to device
     cudaMemcpy(deviceQueryVector, &queryVector, sizeof(uint64_cu),
