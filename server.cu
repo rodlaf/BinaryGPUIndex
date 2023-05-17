@@ -2,11 +2,11 @@
 #include <chrono>
 #include <cstdio>
 #include <cstdlib>
-#include <utility>
-#include <future>
-#include <thread>     
 #include <functional>
+#include <future>
 #include <iostream>
+#include <thread>
+#include <utility>
 
 #include <boost/lexical_cast.hpp>
 #include <boost/uuid/random_generator.hpp>
@@ -18,7 +18,7 @@
 
 using namespace boost::uuids;
 
-std::string vectorToString(uint64_cu vector){
+std::string vectorToString(uint64_cu vector) {
   return std::bitset<64>(vector).to_string();
 }
 
@@ -91,23 +91,27 @@ int main() {
           return crow::response(crow::status::BAD_REQUEST);
 
         // Set up memory to collect query results
-        uint64_cu *kNearestVectors = (uint64_cu *)malloc(topK * sizeof(uint64_cu));
+        uint64_cu *kNearestVectors =
+            (uint64_cu *)malloc(topK * sizeof(uint64_cu));
         float *kNearestDistances = (float *)malloc(topK * sizeof(float));
         uuid *kNearestIds = (uuid *)malloc(topK * sizeof(uuid));
 
         // Query index
-        index->query(vector, topK, kNearestDistances, kNearestVectors, kNearestIds);
+        index->query(vector, topK, kNearestDistances, kNearestVectors,
+                     kNearestIds);
 
         crow::json::wvalue response({});
 
         for (int i = 0; i < topK; ++i) {
-          response["matches"][i]["id"] =
-              to_string(kNearestIds[i]);
+          response["matches"][i]["id"] = to_string(kNearestIds[i]);
           response["matches"][i]["distance"] =
               std::to_string(kNearestDistances[i]);
-          response["matches"][i]["values"] =
-              vectorToString(kNearestVectors[i]);
+          response["matches"][i]["values"] = vectorToString(kNearestVectors[i]);
         }
+
+        free(kNearestVectors);
+        free(kNearestDistances);
+        free(kNearestIds);
 
         return crow::response{response};
       });
