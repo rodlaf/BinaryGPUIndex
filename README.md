@@ -107,7 +107,7 @@ The following is an example response to a query with topK equal to 3:
     {
         "matches": [
             {
-                "values": "1100110101101010111100110010111011000111000101011111110011010100",
+                "values": "1100111111101100111100110010111011000101000001011101010010010100",
                 "distance": "0.125980",
                 "id": "8ea44221-707e-4b26-815a-90bb60339401"
             },
@@ -147,6 +147,6 @@ As for inserts, the following is a benchmark.
     Per insert average: 114 ms.
 
 
-## Future directions 🚧
+## Future directions
 
 - Implementation of insert as upsert, e.g., better behavior for insertion of keys that already exist. In the current implementation, duplicates of ids are allowed.
