@@ -1,6 +1,6 @@
 # GPU Vector Index
 
-A proof of concept vector index that supports insertion and k-nearest-neighbors querying. The index is implemented as DeviceIndex in `DeviceIndex.cu` and can be used as a library within a C++ program, in the same way that SQLite is. A simple web server that allows insertions and queries over a network is implemented in `server.cu`.
+A proof of concept vector index that supports insertion and k-nearest-neighbors querying. The index is implemented as DeviceIndex in `DeviceIndex.cu` and can be used as a library within a C++ program. A simple web server that allows insertions and queries over a network is implemented in `server.cu`.
 
 While this implementation can only support 64-bit binary vectors, it can be extended to support any vector type including vectors of non-binary elements such as floating point values. Such an extension would only change the way in which distances are computed between vectors and not the way in which those distances are ranked (e.g., radix select).
 
@@ -134,13 +134,15 @@ shown below.
     Done. Execution time: 195572 ms.
     Server is running on port 80.
 
-Opening the index containing 500 million indexes took a little over 3 minutes. This is a one-time wait for the entire duration of the server, and this opening must be done every time the server is killed and started again. 1000 queries were ran with a topK of 1000 each:
+Opening the index containing 500 million indexes took a little over 3 minutes. This is a one-time wait for the entire duration of the server, and this opening must be done every time the server is killed and started again. 
+
+A benchmark of 1000 queries shows an average latency of 193 milliseconds:
 
     Making 1000 queries with topK=1000...
     Total time: 193152 ms.
     Per query average: 193 ms.
 
-As for inserts, the following is a benchmark.
+As for inserts, the following is a benchmark on inserts of 1000 vectors at a time.
 
     Making 1000 inserts with 1000 vectors per insert...
     Total time: 114483 ms.
