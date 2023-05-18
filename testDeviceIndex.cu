@@ -13,6 +13,15 @@ uint64_cu hash(uint64_cu h) {
   return h;
 }
 
+/*
+  This test opens an index, inserts vectors into it, makes a query, and closes it.
+  It then re-opens the same index, and makes the same query as before, printing
+  the output to insure that the results are the same.
+
+  Different steps in this test can be commented out to accomplish different
+  things, such as generating a random index
+*/
+
 int main(void) {
   using std::chrono::duration;
   using std::chrono::duration_cast;
@@ -23,9 +32,9 @@ int main(void) {
   using boost::uuids::to_string;
   using boost::uuids::uuid;
 
-  const char *vdbName = "test.txt";
+  const char *vdbName = "big.index";
   int vdbCapacity = 950000000;
-  int numToInsert = 3;
+  int numToInsert = 500000000;
 
   // open vector db
   printf("Opening...\n");
@@ -35,7 +44,6 @@ int main(void) {
   auto ms_int = duration_cast<milliseconds>(t2 - t1);
   printf("Done. Execution time: %ldms.\n", ms_int.count());
 
-  // TODO: Do generation-insertion in batches, not just insertion
   int batchSize = 4 << 20;
   int numBatches = (numToInsert + batchSize - 1) / batchSize;
 
@@ -80,48 +88,48 @@ int main(void) {
   ms_int = duration_cast<milliseconds>(t2 - t1);
   printf("Done. Execution time: %ldms.\n", ms_int.count());
 
-  // print results
-  printf("Query: ");
-  printBits(queryVector);
-  for (int i = 0; i < k; ++i) {
-    printf("%d: %8.8f %s ", i, kNearestDistances[i],
-           to_string(kNearestIds[i]).c_str());
-    printBits(kNearestVectors[i]);
-  }
+  // // print results
+  // printf("Query: ");
+  // printBits(queryVector);
+  // for (int i = 0; i < k; ++i) {
+  //   printf("%d: %8.8f %s ", i, kNearestDistances[i],
+  //          to_string(kNearestIds[i]).c_str());
+  //   printBits(kNearestVectors[i]);
+  // }
 
-  // close db
-  delete vdb;
+  // // close db
+  // delete vdb;
 
-  // reopen
-  printf("Reopening...\n");
-  t1 = high_resolution_clock::now();
-  DeviceIndex *vdb2 = new DeviceIndex(vdbName, vdbCapacity);
-  t2 = high_resolution_clock::now();
-  ms_int = duration_cast<milliseconds>(t2 - t1);
-  printf("Done. Execution time: %ldms.\n", ms_int.count());
+  // // reopen
+  // printf("Reopening...\n");
+  // t1 = high_resolution_clock::now();
+  // DeviceIndex *vdb2 = new DeviceIndex(vdbName, vdbCapacity);
+  // t2 = high_resolution_clock::now();
+  // ms_int = duration_cast<milliseconds>(t2 - t1);
+  // printf("Done. Execution time: %ldms.\n", ms_int.count());
 
-  // query again
-  printf("Querying again...\n");
-  t1 = high_resolution_clock::now();
-  vdb2->query(queryVector, k, kNearestDistances, kNearestVectors, kNearestIds);
-  t2 = high_resolution_clock::now();
-  ms_int = duration_cast<milliseconds>(t2 - t1);
-  printf("Done. Execution time: %ldms.\n", ms_int.count());
+  // // query again
+  // printf("Querying again...\n");
+  // t1 = high_resolution_clock::now();
+  // vdb2->query(queryVector, k, kNearestDistances, kNearestVectors, kNearestIds);
+  // t2 = high_resolution_clock::now();
+  // ms_int = duration_cast<milliseconds>(t2 - t1);
+  // printf("Done. Execution time: %ldms.\n", ms_int.count());
 
-  // print results
-  printf("Query: ");
-  printBits(queryVector);
-  for (int i = 0; i < k; ++i) {
-    printf("%d: %8.8f %s ", i, kNearestDistances[i],
-           to_string(kNearestIds[i]).c_str());
-    printBits(kNearestVectors[i]);
-  }
+  // // print results
+  // printf("Query: ");
+  // printBits(queryVector);
+  // for (int i = 0; i < k; ++i) {
+  //   printf("%d: %8.8f %s ", i, kNearestDistances[i],
+  //          to_string(kNearestIds[i]).c_str());
+  //   printBits(kNearestVectors[i]);
+  // }
 
-  // close second db
-  delete vdb2;
+  // // close second db
+  // delete vdb2;
 
-  // delete file
-  std::remove(vdbName);
+  // // delete file
+  // std::remove(vdbName);
 
   return 0;
 }

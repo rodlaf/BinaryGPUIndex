@@ -6,9 +6,8 @@
 typedef unsigned long long int uint64_cu;
 
 /*
-  TODO: return only keys and make the caller exploit the usage of keys that are
-  sequential to quickly retrieve their corresponding vectors by making them
-  represent array indexes; do not do that retrieval in this method.
+  keys MUST be a sequence of integers representing array indexes!!
+  e.g., [0, 1, 2, ..., numVectors].
 
   All memory that is passed must be on device.
 */

@@ -82,19 +82,6 @@ int main() {
     printf("kSmallestValues: %d: %u\n", i, hostKSmallestValues[i]);
   }
 
-  // // run thrust sort
-  // cudaEventCreate(&start);
-  // cudaEventCreate(&stop);
-  // cudaEventRecord(start, 0);
-
-  // thrust::sort(thrust::device, xs, xs + n);
-
-  // cudaEventRecord(stop, 0);
-  // cudaEventSynchronize(stop);
-  // cudaEventElapsedTime(&time, start, stop);
-
-  // printf("Execution time:  %.3f ms \n", time);
-
   cudaFree(xs);
   cudaFree(keys);
   cudaFree(tempValues1);

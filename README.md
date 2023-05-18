@@ -1,6 +1,6 @@
-# GPU Accelerated Vector Index
+# GPU Vector Index
 
-A proof of concept vector index that supports insertion and k-nearest-neighbors querying. The index is implemented as DeviceIndex in `DeviceIndex.cu` and a simple web server that allows insertions and queries over a network is implemented in `server.cu`.
+A proof of concept vector index that supports insertion and k-nearest-neighbors querying. The index is implemented as DeviceIndex in `DeviceIndex.cu` and can be used as a library within a C++ program, in the same way that SQLite is. A simple web server that allows insertions and queries over a network is implemented in `server.cu`.
 
 While this implementation can only support 64-bit binary vectors, it can be extended to support any vector type including vectors of non-binary elements such as floating point values. Such an extension would only change the way in which distances are computed between vectors and not the way in which those distances are ranked (e.g., radix select).
 
@@ -13,62 +13,140 @@ Vectors must be inserted along with an UUID. This index can be extended to suppo
 
 ## Usage
 
-The implementation can be tested without use of a network by running
+The server is complied and run in the following manner, in a shell:
 
-    nvcc testDeviceIndex.cu
-    ./a.out
+    nvcc server.cu
+    ./a.out [index filename]
 
-This test will generate random vectors using a hash function and insert them 
-into a new DeviceIndex. A query will be made, and then the DeviceIndex will 
-be deleted. Following this, a new, different DeviceIndex will be made using the
-file created by the old one. The same query as before will be made, and the 
-results will be shown to test that they are equal. 
+[index filename] must be replaced by the name of the file where indexes are 
+to be stored. 
+
+The server will then specify the port on which it is running, which should be configured in the appropriate manner if using a cloud service to host (e.g., AWS EC2).
+
+The server has two methods, explained below:
+
+- POST /query
+- POST /insert
+
+## Inserting
+
+Requests to /insert must contain, in the body, the vectors to be inserted, along with their ids, in JSON format. The format is the following:
+
+    {
+        "vectors": [
+            {
+                "id": "[valid UUID]"
+                "values": "[valid binary string of length 64]"
+            },
+
+            ...
+        ]
+    }
+
+The following is an example of a valid request to /insert:
+
+    {
+        "vectors": [
+            {
+                "id": "4d1027ec-80b7-4df3-b950-ae824fadbd61",
+                "values": "1000001011111100100011010001100010011000110010011110110111110110"
+            },
+            {
+                "id": "e78241cc-5bc6-4532-8b7c-76809c2704bd",
+                "values": "110010110000101101011000101101110101000110110010001100001110010"
+            },
+            {
+                "id": "87e298cc-8e46-4a6a-922c-127026f99dea",
+                "values": "100010101010101100000011101101000000011011010100000000001110001"
+            }
+        ]
+    }
+
+The response will return the number of vectors inserted, if succesfull. The response to the example request above would be 
+
+    {
+        "insertedCount": "3"
+    }
+
+## Quering
+
+Request to /query must contain the vector to be queried and the number topK of vectors to be retrieved. The format is the following:
+
+    {
+        "topK": "[valid integer]",
+        "vector": "[valid binary string of length 64]"
+    }
+
+The topK amount must be less than or equal to the number of vectors in the index for the query to succeed.
+
+The following is an example of a valid /query POST body:
+
+    {
+        "topK": "1000",
+        "vector": "1100111111101100111100110010111011000101000001011101010010010100"
+    }
+
+The response is a list of the retrieved vectors (matches) along with their ids and corresponding distances, which represent cosine distances. The format is the following:
+
+    {
+        "matches": [
+            {
+                "values": "[binary string representing vector]",
+                "distance": "[floating point value]",
+                "id": "[vector UUID]"
+            },
+            
+            ...
+        ]
+    }
+
+
+The following is an example response to a query with topK equal to 3:
+
+
+    {
+        "matches": [
+            {
+                "values": "1100110101101010111100110010111011000111000101011111110011010100",
+                "distance": "0.125980",
+                "id": "8ea44221-707e-4b26-815a-90bb60339401"
+            },
+            {
+                "id": "770d9f87-7a81-484d-95f9-5ca3321a6028",
+                "distance": "0.125980",
+                "values": "1100110101101010111100110010111011000111000101011111110011010100"
+            },
+            {
+                "values": "1100111111001100111000010010111111000001000001111110010000010100",
+                "distance": "0.137542",
+                "id": "2c7a0a4f-de42-482a-9bee-a9f4c3c3102b"
+            }
+        ]
+    }
+
 
 ## Benchmark 
 
 The results of simple benchmark on a single query of half a billion vectors is 
 shown below.
 
-    Opening...
-    numVectors: 500000000
-    Done. Execution time: 195310ms.
-    Querying...
-    Done. Execution time: 52ms.
-    k = 10
-    Query: 0011101010000101100100111000100001101100010101011010000000101011
-    0: 5b9dda93-977b-414e-91de-68ad617b4ab3 0.00000000 0011101010000101100100111000100001101100010101011010000000101011
-    1: 83da579b-7721-44b9-8bb9-0e64ef46a5c6 0.17487699 0011101011100101101101111001110001000100010101111010000110101011
-    2: 9091f50d-b508-40c8-82e5-061a1ec95357 0.18350339 1011101010011101100101111000110011001100011100011010000000100111
-    3: c422d8c1-78fe-4b62-9e8b-b4cb0ca5fea1 0.17487699 1011001010000101100111111010100001101100111101001110000100101111
-    4: 57321faf-6bcb-4d53-be4d-edb8b03774a6 0.17487699 0011101011100101101101111001110001000100010101111010000110101011
-    5: 964cfd4f-37b3-4feb-85fb-f13ebf29e794 0.18350339 0011101011000000100100111110100001111101010111011110000001100011
-    6: a80fd471-d49b-4fad-80aa-3baf780bffd1 0.17487699 1011001010000101100111111010100001101100111101001110000100101111
-    7: bfb98c28-2826-4199-b2e6-e46c7cf2f154 0.17487699 1011001010000101100111111010100001101100111101001110000100101111
-    8: 97f3a56c-c291-4ad3-a6b1-508b3b03a193 0.18829232 0111101010100111110100111010110001101000010101111010101011101111
-    9: c4ddbfa8-8937-4bf5-a345-5f919119713d 0.18829232 0011101011010101110110111010000011111100110111011110010000111011
+    Opening index...
+    Done. Execution time: 195572 ms.
+    Server is running on port 80.
+
+Opening the index containing 500 million indexes took a little over 3 minutes. This is a one-time wait for the entire duration of the server, and this opening must be done every time the server is killed and started again. 1000 queries were ran with a topK of 1000 each:
+
+    Making 1000 queries with topK=1000...
+    Total time: 193152 ms.
+    Per query average: 193 ms.
+
+As for inserts, the following is a benchmark.
+
+    Making 1000 inserts with 1000 vectors per insert...
+    Total time: 114483 ms.
+    Per insert average: 114 ms.
 
 
-## DeviceIndex 🚧
+## Future directions 🚧
 
-DeviceIndex is the class representing the database. DeviceIndex has only two methods:
-
-1. Insert
-
-Insert takes...
-
-2. Query
-
-Query takes...
-
-## How it works 🚧
-
-We used binary vectors so that...
-
-Radix sort is a method of sorting...
-
-Radix select is a variation that...
-
-Our implementation of radix selection is...
-
-Our implementation of kNN... 
-
+- Implementation of insert as upsert, e.g., better behavior for insertion of keys that already exist. In the current implementation, duplicates of ids are allowed.

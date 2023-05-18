@@ -1,12 +1,10 @@
 #include <array>
-#include <chrono>
 #include <cstdio>
 #include <cstdlib>
-#include <functional>
-#include <future>
 #include <iostream>
-#include <thread>
 #include <utility>
+#include <cassert>
+#include <chrono>
 
 #include <boost/lexical_cast.hpp>
 #include <boost/uuid/random_generator.hpp>
@@ -18,22 +16,32 @@
 
 using namespace boost::uuids;
 
+using std::chrono::duration;
+using std::chrono::duration_cast;
+using std::chrono::high_resolution_clock;
+using std::chrono::milliseconds;
+
 std::string vectorToString(uint64_cu vector) {
   return std::bitset<64>(vector).to_string();
 }
 
-int main() {
-  const char *indexName = "test.index";
+int main(int argc, char** argv) {
   int A10GCapacity = 950000000;
   int port = 80;
+
+  assert(argc == 2);
+  const char *indexName = argv[1];
 
   crow::SimpleApp app;
   app.loglevel(crow::LogLevel::Warning);
 
   // Open index
   printf("Opening index...\n");
+  auto t1 = high_resolution_clock::now();
   DeviceIndex *index = new DeviceIndex(indexName, A10GCapacity);
-  printf("Done.\n");
+  auto t2 = high_resolution_clock::now();
+  auto ms_int = duration_cast<milliseconds>(t2 - t1);
+  printf("Done. Execution time: %ld ms.\n", ms_int.count());
 
   // Insert route
   CROW_ROUTE(app, "/insert")

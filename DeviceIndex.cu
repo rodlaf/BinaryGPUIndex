@@ -1,9 +1,10 @@
-#include <iostream>
+#include <bitset>
 #include <cstdio>
 #include <fstream>
+#include <iostream>
 #include <string>
 #include <unordered_map>
-#include <bitset>
+#include <array>
 
 #include <boost/uuid/uuid.hpp>
 #include <boost/uuid/uuid_generators.hpp>
@@ -11,19 +12,6 @@
 #include <thrust/sequence.h>
 
 #include "kNearestNeighbors.h"
-
-// Design decision: Separate deviceKeys and vectorKeys.
-//
-// vectorKeys can be very long (e.g., a whole UUID) but deviceKeys must
-// be a single unsigned integer (e.g., 32 bits). This imposes a limitation
-// that at most 2^32 billion vectors can be searched on a GPU at a time, no
-// matter the memory constraints of the GPU. This can be changed in the future.
-//
-// a separate collection of deviceKey-to-vectorkey key-value pairs will be kept
-// in either CPU memory or the persistent key value store (e.g., RocksDB).
-//
-// in addition, deviceKeys will be sequential in order to enable quick vector
-// retrieval by interpreting them as indexes in the on-device vector array
 
 // Requires keys to be sequential, representing array indexes
 __global__ void retrieveVectorsFromKeys(uint64_cu *vectors, unsigned *keys,
@@ -52,11 +40,11 @@ private:
   unsigned *workingMem3;
   uint64_cu *vectors;
   uint64_cu *deviceQueryVector;
-  unsigned *deviceKeys; // sequential keys
+  unsigned *deviceKeys; // sequential keys e.g., a range.
 
   // Use an in-memory hash map to keep track of deviceKey to vectorKey mappings
-  // In practice, this means vector ids can't be too big. An alternate 
-  // implementation could retrieve ids from disk instead. This would be much 
+  // In practice, this means vector ids can't be too big. An alternate
+  // implementation could retrieve ids from disk instead. This would be much
   // slower for large k when querying
   std::unordered_map<unsigned, uuid> idMap;
 
@@ -64,12 +52,11 @@ public:
   int numVectors = 0;
   const char *name;
 
-  // TODO: Make capacity public variable and ensure that it matches the passed
-  // variable of the same name if a database is being reopened
-  // OR rename capacity to size and make it a feature, kinda
+  // Capacity must be passed as a maximum vector count as this enables
+  // insertion and querying without allocation of memory every time.
   DeviceIndex(const char *nameParam, int capacity) {
     name = nameParam;
-    
+
     // Allocate deviceKeys and initialize (initialization requires memory)
     cudaMalloc(&deviceKeys, capacity * sizeof(unsigned));
     thrust::sequence(thrust::device, deviceKeys, deviceKeys + capacity);
@@ -85,8 +72,8 @@ public:
     int bufferSize = 4 << 20;
     uint64_cu *buffer = (uint64_cu *)malloc(bufferSize * sizeof(uint64_cu));
     int bufferCount = 0;
-    auto flushBuffer = [&]() { 
-      cudaMemcpy(vectors + numVectors, buffer, bufferCount * sizeof(uint64_cu), 
+    auto flushBuffer = [&]() {
+      cudaMemcpy(vectors + numVectors, buffer, bufferCount * sizeof(uint64_cu),
                  cudaMemcpyHostToDevice);
       numVectors += bufferCount;
       bufferCount = 0;
@@ -95,7 +82,7 @@ public:
     std::ifstream f(name);
     int lineSize = sizeof(uuid) + sizeof(uint64_cu);
     assert(lineSize == 24);
-    char *lineBuf = (char *) malloc(lineSize);
+    char *lineBuf = (char *)malloc(lineSize);
 
     int lineCount = 0;
     while (f.read(lineBuf, lineSize)) {
@@ -133,17 +120,17 @@ public:
   /*
     Inserts keys. Behaviour is undefined if ids already exist
   */
- // TODO: Increase cuda mem here so no need for capacity variable?
   void insert(int numToAdd, uuid ids[], uint64_cu vectorsToAdd[]) {
     // write ids and vectors to disk
     std::ofstream f;
     f.open(name, std::ios_base::app);
     int lineSize = sizeof(uuid) + sizeof(uint64_cu);
 
-    char *buffer = (char *) malloc(numToAdd * lineSize);
+    char *buffer = (char *)malloc(numToAdd * lineSize);
     for (int i = 0; i < numToAdd; ++i) {
-      memcpy(buffer + i * lineSize, &ids[i], 16);
-      memcpy(buffer + i * lineSize + sizeof(uuid), &vectorsToAdd[i], 8);
+      memcpy(buffer + i * lineSize, &ids[i], sizeof(uuid));
+      memcpy(buffer + i * lineSize + sizeof(uuid), &vectorsToAdd[i],
+             sizeof(uint64_cu));
     }
     f.write(buffer, numToAdd * lineSize);
     f.close();
@@ -151,7 +138,7 @@ public:
 
     // insert ids into keymap
     for (int i = 0; i < numToAdd; ++i) {
-      // TODO: Explain.
+      // Store id in memory
       idMap[numVectors + i] = ids[i];
     }
 
@@ -174,11 +161,6 @@ public:
     cudaMalloc(&deviceKNearestDistances, k * sizeof(float));
     cudaMallocManaged(&deviceKNearestKeys, k * sizeof(unsigned));
     cudaMalloc(&deviceKNearestVectors, k * sizeof(uint64_cu));
-
-    // printf("numVectors: %d\n", numVectors);
-    // for (int i = 0; i < numVectors; ++i) {
-    //   printBits(vectors[i]);
-    // }
 
     // copy query vector to device
     cudaMemcpy(deviceQueryVector, &queryVector, sizeof(uint64_cu),
