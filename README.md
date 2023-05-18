@@ -38,9 +38,7 @@ Requests to /insert must contain, in the body, the vectors to be inserted, along
         {
             "id": "[valid UUID]"
             "values": "[valid binary string of length 64]"
-        },
-
-        ...
+        }
     ]
 }
 ```
@@ -105,9 +103,7 @@ The response is a list of the retrieved vectors (matches) along with their ids a
             "values": "[binary string representing vector]",
             "distance": "[floating point value]",
             "id": "[vector UUID]"
-        },
-
-        ...
+        }
     ]
 }
 ```
