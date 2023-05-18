@@ -32,74 +32,85 @@ The server has two methods, explained below:
 
 Requests to /insert must contain, in the body, the vectors to be inserted, along with their ids, in JSON format. The format is the following:
 
-    {
-        "vectors": [
-            {
-                "id": "[valid UUID]"
-                "values": "[valid binary string of length 64]"
-            },
+```json
+{
+    "vectors": [
+        {
+            "id": "[valid UUID]"
+            "values": "[valid binary string of length 64]"
+        },
 
-            ...
-        ]
-    }
+        ...
+    ]
+}
+```
 
 The following is an example of a valid request to /insert:
 
-    {
-        "vectors": [
-            {
-                "id": "4d1027ec-80b7-4df3-b950-ae824fadbd61",
-                "values": "1000001011111100100011010001100010011000110010011110110111110110"
-            },
-            {
-                "id": "e78241cc-5bc6-4532-8b7c-76809c2704bd",
-                "values": "110010110000101101011000101101110101000110110010001100001110010"
-            },
-            {
-                "id": "87e298cc-8e46-4a6a-922c-127026f99dea",
-                "values": "100010101010101100000011101101000000011011010100000000001110001"
-            }
-        ]
-    }
+```json
+{
+    "vectors": [
+        {
+            "id": "4d1027ec-80b7-4df3-b950-ae824fadbd61",
+            "values": "1000001011111100100011010001100010011000110010011110110111110110"
+        },
+        {
+            "id": "e78241cc-5bc6-4532-8b7c-76809c2704bd",
+            "values": "110010110000101101011000101101110101000110110010001100001110010"
+        },
+        {
+            "id": "87e298cc-8e46-4a6a-922c-127026f99dea",
+            "values": "100010101010101100000011101101000000011011010100000000001110001"
+        }
+    ]
+}
+```
 
 The response will return the number of vectors inserted, if succesfull. The response to the example request above would be 
 
-    {
-        "insertedCount": "3"
-    }
+```json
+{
+    "insertedCount": "3"
+}
+```
 
 ## Quering
 
 Request to /query must contain the vector to be queried and the number topK of vectors to be retrieved. The format is the following:
 
-    {
-        "topK": "[valid integer]",
-        "vector": "[valid binary string of length 64]"
-    }
+```json
+{
+    "topK": "[valid integer]",
+    "vector": "[valid binary string of length 64]"
+}
+```
 
 The topK amount must be less than or equal to the number of vectors in the index for the query to succeed.
 
 The following is an example of a valid /query POST body:
 
-    {
-        "topK": "1000",
-        "vector": "1100111111101100111100110010111011000101000001011101010010010100"
-    }
+```json
+{
+    "topK": "1000",
+    "vector": "1100111111101100111100110010111011000101000001011101010010010100"
+}
+```
 
 The response is a list of the retrieved vectors (matches) along with their ids and corresponding distances, which represent cosine distances. The format is the following:
 
-    {
-        "matches": [
-            {
-                "values": "[binary string representing vector]",
-                "distance": "[floating point value]",
-                "id": "[vector UUID]"
-            },
-            
-            ...
-        ]
-    }
+```json
+{
+    "matches": [
+        {
+            "values": "[binary string representing vector]",
+            "distance": "[floating point value]",
+            "id": "[vector UUID]"
+        },
 
+        ...
+    ]
+}
+```
 
 The following is an example response to a query with topK equal to 3:
 
