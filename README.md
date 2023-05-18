@@ -103,31 +103,31 @@ The response is a list of the retrieved vectors (matches) along with their ids a
 
 The following is an example response to a query with topK equal to 3:
 
-
-    {
-        "matches": [
-            {
-                "values": "1100111111101100111100110010111011000101000001011101010010010100",
-                "distance": "0.125980",
-                "id": "8ea44221-707e-4b26-815a-90bb60339401"
-            },
-            {
-                "id": "770d9f87-7a81-484d-95f9-5ca3321a6028",
-                "distance": "0.125980",
-                "values": "1100110101101010111100110010111011000111000101011111110011010100"
-            },
-            {
-                "values": "1100111111001100111000010010111111000001000001111110010000010100",
-                "distance": "0.137542",
-                "id": "2c7a0a4f-de42-482a-9bee-a9f4c3c3102b"
-            }
-        ]
-    }
-
+```json
+{
+    "matches": [
+        {
+            "values": "1100111111101100111100110010111011000101000001011101010010010100",
+            "distance": "0.125980",
+            "id": "8ea44221-707e-4b26-815a-90bb60339401"
+        },
+        {
+            "id": "770d9f87-7a81-484d-95f9-5ca3321a6028",
+            "distance": "0.125980",
+            "values": "1100110101101010111100110010111011000111000101011111110011010100"
+        },
+        {
+            "values": "1100111111001100111000010010111111000001000001111110010000010100",
+            "distance": "0.137542",
+            "id": "2c7a0a4f-de42-482a-9bee-a9f4c3c3102b"
+        }
+    ]
+}
+```
 
 ## Benchmark 
 
-The results of simple benchmark on a single query of half a billion vectors is 
+The results of simple benchmark on an index containing half a billion vectors is 
 shown below.
 
     Opening index...
