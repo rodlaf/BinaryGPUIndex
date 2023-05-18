@@ -25,8 +25,8 @@ The server will then specify the port on which it is running, which should be co
 
 The server has two methods, explained below:
 
-- POST /query
 - POST /insert
+- POST /query
 
 ## Inserting
 
@@ -64,7 +64,7 @@ The following is an example of a valid request to /insert:
 }
 ```
 
-The response will return the number of vectors inserted, if succesfull. The response to the example request above would be 
+The response will return the number of vectors inserted, if succesful. The response to the example request above would be 
 
 ```json
 {
@@ -72,7 +72,7 @@ The response will return the number of vectors inserted, if succesfull. The resp
 }
 ```
 
-## Quering
+## Querying
 
 Request to /query must contain the vector to be queried and the number topK of vectors to be retrieved. The format is the following:
 
