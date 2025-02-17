@@ -1,4 +1,4 @@
-# GPU Vector Index
+# Binary GPU Vector Index
 
 A proof of concept vector index that supports insertion and k-nearest-neighbors querying. The index is implemented as DeviceIndex in `DeviceIndex.cu` and can be used as a library within a C++ program. A simple web server that allows insertions and queries over a network is implemented in `server.cu`.
 
